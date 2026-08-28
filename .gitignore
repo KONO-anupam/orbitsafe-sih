@@ -1,0 +1,1 @@
+printf "\n# Python\n__pycache__/\n*.py[cod]\n" >> .gitignore

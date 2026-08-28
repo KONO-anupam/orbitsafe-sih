@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { OrbitalElements3D } from "@/lib/types";
-import { orbitPath, positionAtFraction, toSceneUnits } from "@/lib/orbitGeometry";
+import { Vec3, orbitPath, positionAtFraction, toSceneUnits } from "@/lib/orbitGeometry";
 import { getGlobeTheme, severityHexFromVar } from "@/lib/theme";
 
 /** Procedurally paints a stylized instrument-panel earth texture — no network fetch. */
@@ -91,19 +91,57 @@ function detectWebGL(): boolean {
   }
 }
 
+/** Linear interpolation between two Vec3 points. */
+function lerpVec3(a: Vec3, b: Vec3, t: number): Vec3 {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+}
+
+/** Samples a point along an (open) polyline of scene-unit points at frac [0,1]. */
+function sampleScenePath(points: Vec3[], frac: number): Vec3 {
+  if (points.length === 0) return { x: 0, y: 0, z: 0 };
+  if (points.length === 1) return points[0];
+  const f = Math.min(0.999999, Math.max(0, frac)) * (points.length - 1);
+  const i0 = Math.floor(f);
+  const i1 = Math.min(points.length - 1, i0 + 1);
+  return lerpVec3(points[i0], points[i1], f - i0);
+}
+
+/** Triangle wave in [0,1] — used to ping-pong a marker across a short,
+ * non-looping trajectory window instead of teleporting back to the start. */
+function pingPong(x: number): number {
+  const m = ((x % 2) + 2) % 2;
+  return m < 1 ? m : 2 - m;
+}
+
 export default function Globe3D({
+  mode = "synthetic",
   primaryElements,
   secondaryElements,
+  primaryTrajectory,
+  secondaryTrajectory,
   secondaryColor,
   onUnavailable,
 }: {
-  primaryElements: OrbitalElements3D;
-  secondaryElements: OrbitalElements3D;
+  /** "synthetic" (default): illustrative Keplerian orbit from OrbitalElements3D.
+   *  "trajectory": real SGP4-propagated position arrays from the backend. */
+  mode?: "synthetic" | "trajectory";
+  primaryElements?: OrbitalElements3D;
+  secondaryElements?: OrbitalElements3D;
+  primaryTrajectory?: Vec3[];
+  secondaryTrajectory?: Vec3[];
   secondaryColor: string;
   onUnavailable?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [supported, setSupported] = useState<boolean | null>(null);
+
+  // Runtime guard: trajectory mode requires both arrays with data. If either
+  // is missing, this component would otherwise render an empty globe with
+  // no explanation — fail with a clear message instead, same defensive
+  // posture as the WebGL check below.
+  const trajectoryDataMissing =
+    mode === "trajectory" &&
+    (!primaryTrajectory || !secondaryTrajectory || primaryTrajectory.length === 0 || secondaryTrajectory.length === 0);
 
   useEffect(() => {
     // Intentional: WebGL support can only be detected client-side, post-mount.
@@ -119,6 +157,7 @@ export default function Globe3D({
 
   useEffect(() => {
     if (supported !== true) return;
+    if (trajectoryDataMissing) return;
     const containerEl = containerRef.current;
     if (!containerEl) return;
     const container: HTMLDivElement = containerEl;
@@ -210,24 +249,36 @@ export default function Globe3D({
       scene.add(new THREE.Points(starGeo, starMat));
     }
 
+    const isTrajectory = mode === "trajectory";
+
+    // --- resolve scene-unit point arrays for both bodies, once, up front ---
+    // Synthetic mode computes a full closed-ring orbit from Keplerian
+    // elements (unchanged math from before). Trajectory mode uses the real
+    // propagated points handed in as props, converted to scene units.
+    const primaryScenePoints: Vec3[] = isTrajectory
+      ? (primaryTrajectory as Vec3[]).map((p) => toSceneUnits(p))
+      : orbitPath(primaryElements as OrbitalElements3D, 160).map((p) => toSceneUnits(p));
+    const secondaryScenePoints: Vec3[] = isTrajectory
+      ? (secondaryTrajectory as Vec3[]).map((p) => toSceneUnits(p))
+      : orbitPath(secondaryElements as OrbitalElements3D, 160).map((p) => toSceneUnits(p));
+
     // --- orbit paths ---
-    function buildPathLine(elements: OrbitalElements3D, hex: number, dashed: boolean) {
-      const pts = orbitPath(elements, 160).map((p) => {
-        const s = toSceneUnits(p);
-        return new THREE.Vector3(s.x, s.z, s.y); // map to three's Y-up
-      });
+    function buildPathLine(scenePoints: Vec3[], hex: number, dashed: boolean, closed: boolean) {
+      const pts = scenePoints.map((s) => new THREE.Vector3(s.x, s.z, s.y)); // map to three's Y-up
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
       const mat = dashed
         ? new THREE.LineDashedMaterial({ color: hex, dashSize: 0.04, gapSize: 0.025, transparent: true, opacity: 0.8 })
         : new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity: 0.8 });
-      const line = new THREE.LineLoop(geo, mat);
+      const line = closed ? new THREE.LineLoop(geo, mat) : new THREE.Line(geo, mat);
       if (dashed) line.computeLineDistances();
       scene.add(line);
       return line;
     }
-    buildPathLine(primaryElements, theme.accent, false);
+    // Synthetic orbits are drawn as a closed ring (LineLoop); a real
+    // trajectory is a short open arc around TCA, drawn as an open polyline.
+    buildPathLine(primaryScenePoints, theme.accent, false, !isTrajectory);
     const secHex = severityHexFromVar(secondaryColor, theme);
-    buildPathLine(secondaryElements, secHex, true);
+    buildPathLine(secondaryScenePoints, secHex, true, !isTrajectory);
 
     // --- moving markers ---
     function buildMarker(hex: number) {
@@ -252,8 +303,16 @@ export default function Globe3D({
     const closingLine = new THREE.Line(closingGeo, closingMat);
     scene.add(closingLine);
 
-    function placeMarker(marker: THREE.Group, elements: OrbitalElements3D, frac: number) {
+    // Synthetic marker placement: unchanged from before, samples the
+    // Keplerian generator directly by orbital fraction.
+    function placeMarkerSynthetic(marker: THREE.Group, elements: OrbitalElements3D, frac: number) {
       const p = toSceneUnits(positionAtFraction(elements, frac));
+      marker.position.set(p.x, p.z, p.y);
+      return marker.position;
+    }
+    // Trajectory marker placement: samples the fetched point array.
+    function placeMarkerFromPath(marker: THREE.Group, scenePoints: Vec3[], frac: number) {
+      const p = sampleScenePath(scenePoints, frac);
       marker.position.set(p.x, p.z, p.y);
       return marker.position;
     }
@@ -279,8 +338,23 @@ export default function Globe3D({
     function animate() {
       raf = requestAnimationFrame(animate);
       t += speed;
-      const p1 = placeMarker(primaryMarker, primaryElements, t % 1);
-      const p2 = placeMarker(secondaryMarker, secondaryElements, (t * (secondaryElements.period_minutes / primaryElements.period_minutes)) % 1);
+
+      let p1: THREE.Vector3;
+      let p2: THREE.Vector3;
+      if (isTrajectory) {
+        // Ping-pong across the fetched window so the marker sweeps back and
+        // forth through the real approach-and-recede around TCA, rather
+        // than wrapping/teleporting like a full closed orbit would.
+        const frac = pingPong(t * 3);
+        p1 = placeMarkerFromPath(primaryMarker, primaryScenePoints, frac);
+        p2 = placeMarkerFromPath(secondaryMarker, secondaryScenePoints, frac);
+      } else {
+        const el1 = primaryElements as OrbitalElements3D;
+        const el2 = secondaryElements as OrbitalElements3D;
+        p1 = placeMarkerSynthetic(primaryMarker, el1, t % 1);
+        p2 = placeMarkerSynthetic(secondaryMarker, el2, (t * (el2.period_minutes / el1.period_minutes)) % 1);
+      }
+
       const posAttr = closingGeo.attributes.position as THREE.BufferAttribute;
       posAttr.setXYZ(0, p1.x, p1.y, p1.z);
       posAttr.setXYZ(1, p2.x, p2.y, p2.z);
@@ -314,7 +388,17 @@ export default function Globe3D({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [primaryElements, secondaryElements, secondaryColor, supported, onUnavailable]);
+  }, [
+    mode,
+    primaryElements,
+    secondaryElements,
+    primaryTrajectory,
+    secondaryTrajectory,
+    trajectoryDataMissing,
+    secondaryColor,
+    supported,
+    onUnavailable,
+  ]);
 
   if (supported === false) {
     return (
@@ -324,6 +408,19 @@ export default function Globe3D({
       >
         <p className="font-mono text-xs">
           3D rendering isn&apos;t available on this device. Showing the 2D view instead.
+        </p>
+      </div>
+    );
+  }
+
+  if (trajectoryDataMissing) {
+    return (
+      <div
+        className="flex items-center justify-center h-full text-center px-6 py-10"
+        style={{ color: "var(--text-tertiary)" }}
+      >
+        <p className="font-mono text-xs">
+          Real trajectory data isn&apos;t available for this pair.
         </p>
       </div>
     );

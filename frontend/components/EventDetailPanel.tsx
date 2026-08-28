@@ -6,6 +6,7 @@ import { confidenceColor, formatUTC, severityColor, severityGlow } from "@/lib/f
 import ScopeTrace from "./ScopeTrace";
 import OrbitSchematic from "./OrbitSchematic";
 import Globe3D from "./Globe3D";
+import { useConjunctionTrajectories } from "@/lib/useConjuctionTrajectories";
 
 export default function EventDetailPanel({
   event,
@@ -16,6 +17,17 @@ export default function EventDetailPanel({
 }) {
   const [view, setView] = useState<"3d" | "2d">("3d");
   const [globeUnavailable, setGlobeUnavailable] = useState(false);
+
+  // Attempts to fetch real SGP4 trajectories for this pair from the
+  // catalog/propagation backend. Fails soft — if the backend is down, the
+  // NORAD IDs aren't in its catalog, or it simply isn't running, `data`
+  // stays null and the globe below falls back to the illustrative
+  // synthetic orbit, exactly as it did before this backend existed.
+  const { data: realTrajectories } = useConjunctionTrajectories(
+    event?.primary.norad_id ?? "",
+    event?.secondary.norad_id ?? "",
+    event?.tca ?? ""
+  );
 
   // Reset to 3D for each newly selected event, unless this device already
   // told us 3D isn't supported.
@@ -40,6 +52,7 @@ export default function EventDetailPanel({
   }
 
   const sevColor = severityColor(event.severity);
+  const hasRealTrajectories = !!realTrajectories;
 
   return (
     <div className="h-full overflow-y-auto animate-rise-in p-4 sm:p-5 flex flex-col gap-6">
@@ -72,9 +85,28 @@ export default function EventDetailPanel({
       {/* orbit geometry card: 3D globe with 2D fallback */}
       <div className="panel-card p-5">
         <div className="flex items-center justify-between mb-4">
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>
-            orbit geometry
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>
+              orbit geometry
+            </span>
+            {view === "3d" && !globeUnavailable && (
+              <span
+                className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md"
+                style={
+                  hasRealTrajectories
+                    ? { color: "var(--safe)", background: "var(--safe-glow)" }
+                    : { color: "var(--text-tertiary)", background: "var(--surface-2)" }
+                }
+                title={
+                  hasRealTrajectories
+                    ? "Real SGP4-propagated positions from the backend"
+                    : "Illustrative orbit — the backend's real trajectory wasn't available for this pair"
+                }
+              >
+                {hasRealTrajectories ? "live SGP4" : "illustrative"}
+              </span>
+            )}
+          </div>
           {event.orbit3d && !globeUnavailable && (
             <div className="flex border rounded-md overflow-hidden" style={{ borderColor: "var(--border)" }}>
               {(["3d", "2d"] as const).map((v) => (
@@ -101,15 +133,29 @@ export default function EventDetailPanel({
         {view === "3d" && event.orbit3d && !globeUnavailable ? (
           <div className="flex flex-col gap-2.5">
             <div className="h-64 sm:h-72 rounded-lg overflow-hidden" style={{ background: "var(--bg)" }}>
-              <Globe3D
-                primaryElements={event.orbit3d.primary}
-                secondaryElements={event.orbit3d.secondary}
-                secondaryColor={sevColor}
-                onUnavailable={() => {
-                  setGlobeUnavailable(true);
-                  setView("2d");
-                }}
-              />
+              {hasRealTrajectories ? (
+                <Globe3D
+                  mode="trajectory"
+                  primaryTrajectory={realTrajectories!.primary}
+                  secondaryTrajectory={realTrajectories!.secondary}
+                  secondaryColor={sevColor}
+                  onUnavailable={() => {
+                    setGlobeUnavailable(true);
+                    setView("2d");
+                  }}
+                />
+              ) : (
+                <Globe3D
+                  mode="synthetic"
+                  primaryElements={event.orbit3d.primary}
+                  secondaryElements={event.orbit3d.secondary}
+                  secondaryColor={sevColor}
+                  onUnavailable={() => {
+                    setGlobeUnavailable(true);
+                    setView("2d");
+                  }}
+                />
+              )}
             </div>
             <p className="font-mono text-[9px] text-center" style={{ color: "var(--text-tertiary)" }}>
               drag to rotate · scroll or pinch to zoom

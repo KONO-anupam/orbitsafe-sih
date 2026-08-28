@@ -49,3 +49,4 @@ export default function CountUp({
 
   return <>{display.toFixed(decimals)}</>;
 }
+  

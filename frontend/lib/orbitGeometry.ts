@@ -52,3 +52,17 @@ export function orbitPath(el: OrbitalElements3D, samples = 128): Vec3[] {
 export function toSceneUnits(v: Vec3, scale = 1 / EARTH_RADIUS_KM): Vec3 {
   return { x: v.x * scale, y: v.y * scale, z: v.z * scale };
 }
+
+/**
+ * Converts real backend trajectory states (position_teme_km: number[])
+ * into the same Vec3[] shape orbitPath() produces, so Globe3D can draw a
+ * real SGP4-propagated path exactly like it draws a synthetic one. TEME is
+ * treated as this scene's inertial frame — the same simplification the
+ * synthetic generator above already makes, so no new inconsistency is
+ * introduced by using real data here.
+ */
+export function pathFromTrajectory(states: { position_teme_km: number[] }[]): Vec3[] {
+  return states
+    .filter((s) => s.position_teme_km.length === 3)
+    .map((s) => ({ x: s.position_teme_km[0], y: s.position_teme_km[1], z: s.position_teme_km[2] }));
+}

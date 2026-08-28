@@ -7,6 +7,7 @@ import WhatIfControls from "@/components/WhatIfControls";
 import AlertTable from "@/components/AlertTable";
 import EventDetailPanel from "@/components/EventDetailPanel";
 import { conjunctions, objectsTracked } from "@/mocks/conjunctions";
+import { useLiveObjectCount } from "@/lib/useLiveObjectCount";
 
 export default function Home() {
   const [threshold, setThreshold] = useState(50);
@@ -14,6 +15,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(conjunctions[0]?.event_id ?? null);
   const [now, setNow] = useState<Date | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const liveObjectCount = useLiveObjectCount();
 
   useEffect(() => {
     // Intentional: `now` starts null so server and first client render match
@@ -59,7 +61,7 @@ export default function Home() {
       <main className="flex-1 flex flex-col gap-6 p-4 sm:p-6">
         {/* summary stats card */}
         <div className="panel-card overflow-hidden">
-          <SummaryStats events={filtered} objectsTracked={objectsTracked} />
+          <SummaryStats events={filtered} objectsTracked={liveObjectCount ?? objectsTracked} />
         </div>
 
         {/* what-if controls card */}
