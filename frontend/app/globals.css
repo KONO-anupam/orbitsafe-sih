@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+:root {
+  /* --- Surface: obsidian neutrals --- */
+  --bg: #09090B;
+  --surface: #101013;
+  --surface-2: #17171B;
+  --border: #232327;
+  --border-strong: #35353B;
+
+  /* --- Text --- */
+  --text-primary: #F4F4F5;
+  --text-secondary: #9B9DA6;
+  --text-tertiary: #6C6E77;
+
+  /* --- Accent: achromatic "beacon" — never a hue, reserved for the UI's
+     own identity (focus, selection, live indicators, slider). Color is
+     spent entirely on severity below, so nothing competes for attention. --- */
+  --accent: #E7E8EA;
+  --accent-dim: #8A8B90;
+  --accent-glow: rgba(231, 232, 234, 0.14);
+
+  /* --- Severity: the only place color appears. Desaturated ~15% from a
+     typical alert palette so it reads as calibrated instrumentation
+     rather than a neon warning light. --- */
+  --critical: #F0453D;
+  --critical-glow: rgba(240, 69, 61, 0.15);
+  --high: #F0913D;
+  --high-glow: rgba(240, 145, 61, 0.13);
+  --medium: #D9AA3C;
+  --medium-glow: rgba(217, 170, 60, 0.12);
+  --low: #5B84A6;
+  --low-glow: rgba(91, 132, 166, 0.14);
+  --safe: #3FBE79;
+  --safe-glow: rgba(63, 190, 121, 0.13);
+
+  --radius: 0.75rem;
+
+  --font-display: var(--font-sora);
+  --font-body: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(231, 232, 234, 0.035), transparent),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.01) 0px, rgba(255,255,255,0.01) 1px, transparent 1px, transparent 3px);
+  color: var(--text-primary);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+::selection {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+.font-display { font-family: var(--font-display), ui-sans-serif, sans-serif; letter-spacing: -0.01em; }
+.font-mono { font-family: var(--font-mono), ui-monospace, monospace; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-rise-in {
+  animation: rise-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- shadcn-style card primitive: rounded, bordered, discrete content.
+   Dense data (tables, mission-bar strip) stays sharp-edged by omission —
+   the contrast between the two is deliberate, not an oversight. --- */
+.panel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}

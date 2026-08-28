@@ -1,0 +1,54 @@
+import { OrbitalElements3D } from "./types";
+
+export const EARTH_RADIUS_KM = 6371;
+
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * Position on a circular orbit at a given fraction [0, 1) of one period.
+ * This is a simplified stand-in for true SGP4 propagation, sufficient for
+ * rendering — it consumes the same conceptual inputs (altitude, inclination,
+ * RAAN, phase) that a real propagator's Keplerian elements would provide.
+ * Coordinates are in an Earth-centered frame with Z as the polar axis.
+ */
+export function positionAtFraction(el: OrbitalElements3D, frac: number): Vec3 {
+  const r = EARTH_RADIUS_KM + el.altitude_km;
+  const theta = ((el.phase_deg / 360) + frac) * Math.PI * 2;
+
+  // position in the orbital plane
+  const xOrb = r * Math.cos(theta);
+  const yOrb = r * Math.sin(theta);
+
+  const inc = (el.inclination_deg * Math.PI) / 180;
+  const raan = (el.raan_deg * Math.PI) / 180;
+
+  // tilt by inclination around the X axis
+  const xInc = xOrb;
+  const yInc = yOrb * Math.cos(inc);
+  const zInc = yOrb * Math.sin(inc);
+
+  // rotate by RAAN around the Z (polar) axis
+  const x = xInc * Math.cos(raan) - yInc * Math.sin(raan);
+  const y = xInc * Math.sin(raan) + yInc * Math.cos(raan);
+  const z = zInc;
+
+  return { x, y, z };
+}
+
+/** Full path of an orbit as evenly sampled points, for drawing the ring. */
+export function orbitPath(el: OrbitalElements3D, samples = 128): Vec3[] {
+  const pts: Vec3[] = [];
+  for (let i = 0; i <= samples; i++) {
+    pts.push(positionAtFraction(el, i / samples));
+  }
+  return pts;
+}
+
+/** Scale km coordinates down to a unit sphere of radius 1 = Earth. */
+export function toSceneUnits(v: Vec3, scale = 1 / EARTH_RADIUS_KM): Vec3 {
+  return { x: v.x * scale, y: v.y * scale, z: v.z * scale };
+}
