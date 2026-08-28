@@ -23,11 +23,7 @@ export default function MissionBar() {
       {/* identity row */}
       <div className="flex items-center justify-between px-4 sm:px-6 py-3">
         <div className="flex items-center gap-3">
-          <div
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ background: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)", animation: "blink-dot 2.4s ease-in-out infinite" }}
-            aria-hidden
-          />
+          
           <span className="font-display font-semibold tracking-tight text-lg sm:text-xl">
             ORBITSAFE
           </span>
