@@ -1,6 +1,7 @@
 """FastAPI interface for catalog lookup and SGP4 propagation."""
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func
@@ -10,10 +11,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import get_db, init_db
 from app.models import OrbitalElementSet, OrbitalObject
 from app.schemas import (
+    CandidateConjunctionResponse,
     ElementResponse,
     ObjectPage,
     ObjectResponse,
     PositionRequest,
+    ScreeningRequest,
+    ScreeningResponse,
     StateVectorResponse,
     TrajectoryRequest,
     TrajectoryResponse,
@@ -24,6 +28,7 @@ from app.services.propagation import (
     generate_trajectory,
     propagate_position,
 )
+from app.services.screening import ScreeningConfig, screen_catalog
 
 
 @asynccontextmanager
@@ -115,3 +120,25 @@ def trajectory(request: TrajectoryRequest, db: Session = Depends(get_db)) -> Tra
         return TrajectoryResponse(norad_cat_id=request.norad_cat_id, states=states)
     except Exception as exc:
         raise _propagation_http_error(exc) from exc
+
+
+@app.post("/api/v1/screen", response_model=ScreeningResponse, tags=["screening"])
+def screen(request: ScreeningRequest, db: Session = Depends(get_db)) -> ScreeningResponse:
+    """Generate nominal close-approach candidates; this does not assign risk scores."""
+    analysis_time = request.analysis_time or datetime.now(timezone.utc)
+    result = screen_catalog(
+        db,
+        ScreeningConfig(
+            analysis_time=analysis_time,
+            forecast_horizon_hours=request.forecast_horizon_hours,
+            screening_threshold_km=request.screening_threshold_km,
+            coarse_step_seconds=request.coarse_step_seconds,
+            object_limit=request.object_limit,
+        ),
+    )
+    return ScreeningResponse(
+        analysis_time=result["analysis_time"],
+        eligible_objects=result["eligible_objects"],
+        excluded_objects=result["excluded_objects"],
+        candidates=[CandidateConjunctionResponse.model_validate(item) for item in result["candidates"]],
+    )

@@ -1,6 +1,6 @@
 # Space Debris Tracking Backend
 
-Phase 2 provides validated catalog ingestion, GP/OMM-to-SGP4 adaptation, on-demand state propagation, trajectory generation, and a FastAPI interface. It does not implement conjunction detection, collision risk, ML, frontend work, or background workers.
+Phase 2 provides validated catalog ingestion, GP/OMM-to-SGP4 adaptation, on-demand state propagation, trajectory generation, a conservative nominal conjunction-screening endpoint, and a FastAPI interface. It does not implement collision probability, ML, frontend work, or background workers.
 
 ## Setup and ingestion
 
@@ -37,9 +37,14 @@ curl -X POST http://127.0.0.1:8000/api/v1/propagation/position \
 curl -X POST http://127.0.0.1:8000/api/v1/propagation/trajectory \
   -H 'content-type: application/json' \
   -d '{"norad_cat_id":900,"start_time":"2026-08-26T21:32:22.276320Z","end_time":"2026-08-26T21:42:22.276320Z","step_seconds":60}'
+curl -X POST http://127.0.0.1:8000/api/v1/screen \
+  -H 'content-type: application/json' \
+  -d '{"forecast_horizon_hours":24,"screening_threshold_km":50,"coarse_step_seconds":60,"object_limit":1000}'
 ```
 
 `GET /api/v1/objects` supports exact `norad_cat_id`, substring `name`, `object_type`, `source_category`, `limit`, and `offset`. Object and element endpoints return 404 for an unknown NORAD ID.
+
+`POST /api/v1/screen` freezes one eligible GP element set per object at the requested analysis time, samples shared UTC timestamps, spatially hashes propagated TEME positions, and then refines each local candidate minimum with SGP4. It returns nominal TCA, miss distance, relative velocity, data age, an explainable 0–100 nominal screening-risk score, severity, confidence, and limitations. The score is not a collision probability: it prioritizes candidates using nominal separation, relative velocity, time to TCA, protected-object context, and data freshness. Its default 60-second step and motion-inflated broad-phase gate favour retaining candidates over speed; use a smaller object limit for interactive demos.
 
 ## GP/OMM and time policy
 
