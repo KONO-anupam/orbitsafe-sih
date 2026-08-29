@@ -71,3 +71,46 @@ class TrajectoryRequest(BaseModel):
 class TrajectoryResponse(BaseModel):
     norad_cat_id: int
     states: list[StateVectorResponse]
+
+
+class ScreeningRequest(BaseModel):
+    """Controls for an on-demand nominal conjunction screen."""
+
+    analysis_time: datetime | None = None
+    forecast_horizon_hours: float = Field(default=24, gt=0, le=72)
+    screening_threshold_km: float = Field(default=50, gt=0, le=1000)
+    coarse_step_seconds: int = Field(default=60, ge=30, le=300)
+    object_limit: int = Field(default=1000, ge=2, le=5000)
+
+
+class ScreeningObjectRef(BaseModel):
+    norad_id: str
+    name: str
+    object_type: Literal["PAYLOAD", "DEBRIS", "ROCKET BODY", "STATION"]
+
+
+class CandidateConjunctionResponse(BaseModel):
+    """Nominal candidate facts plus an explainable, non-probabilistic priority score."""
+
+    event_id: str
+    primary: ScreeningObjectRef
+    secondary: ScreeningObjectRef
+    tca: datetime
+    miss_distance_km: float
+    relative_velocity_km_s: float
+    risk_score: int = Field(ge=0, le=100)
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    confidence: Literal["HIGH", "MEDIUM", "LOW"]
+    data_age_hours: float
+    forecast_horizon_hours: float
+    source: str
+    method: str
+    limitations: list[str]
+    score_breakdown: list[dict[str, str]]
+
+
+class ScreeningResponse(BaseModel):
+    analysis_time: datetime
+    eligible_objects: int
+    excluded_objects: int
+    candidates: list[CandidateConjunctionResponse]

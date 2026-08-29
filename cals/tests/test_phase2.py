@@ -19,6 +19,8 @@ from app.services.propagation import (
     select_element_set,
 )
 from app.services.sgp4_adapter import satrec_from_element_set
+from app.services.screening import ScreeningConfig, screen_catalog
+from app.services.scoring import score_candidate
 from app.services.validation import DataValidationError, utc_datetime, validate_gp_record
 
 
@@ -97,3 +99,60 @@ def test_ingestion_is_idempotent(db):
     ingest_all(db, Path(__file__).resolve().parents[1] / "data" / "raw")
     db.commit()
     assert db.query(OrbitalElementSet).count() == before == 19066
+
+
+def test_screening_generates_refined_nominal_candidate(db):
+    """The spatial broad phase feeds a refined event with scorer-ready facts."""
+    first_epoch = db.query(OrbitalElementSet).filter_by(norad_cat_id=900).one().epoch_utc
+    result = screen_catalog(
+        db,
+        ScreeningConfig(
+            analysis_time=utc_datetime(first_epoch),
+            forecast_horizon_hours=1,
+            # A deliberately wide threshold makes this an algorithm-contract
+            # test rather than relying on a real-world close approach in the
+            # static audit fixture.
+            screening_threshold_km=20_000,
+            coarse_step_seconds=60,
+            object_limit=2,
+        ),
+    )
+    assert result["eligible_objects"] == 2
+    assert len(result["candidates"]) == 1
+    candidate = result["candidates"][0]
+    assert candidate["primary"]["norad_id"] == "900"
+    assert candidate["secondary"]["norad_id"] == "902"
+    assert candidate["miss_distance_km"] <= 20_000
+    assert candidate["relative_velocity_km_s"] > 0
+    assert candidate["tca"].tzinfo is not None
+    assert 0 <= candidate["risk_score"] <= 100
+    assert candidate["severity"] in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+    assert candidate["confidence"] in {"HIGH", "MEDIUM", "LOW"}
+    assert candidate["score_breakdown"]
+
+
+def test_risk_score_is_explainable_and_penalizes_stale_data():
+    analysis = utc_datetime("2026-08-26T12:00:00Z")
+    close = score_candidate(
+        miss_distance_km=2.4,
+        relative_velocity_km_s=13.8,
+        tca=analysis + timedelta(hours=2),
+        analysis_time=analysis,
+        data_age_hours=4,
+        primary_object_type="PAYLOAD",
+        secondary_object_type="DEBRIS",
+    )
+    stale_distant = score_candidate(
+        miss_distance_km=80,
+        relative_velocity_km_s=1,
+        tca=analysis + timedelta(hours=72),
+        analysis_time=analysis,
+        data_age_hours=80,
+        primary_object_type="DEBRIS",
+        secondary_object_type="DEBRIS",
+    )
+    assert close.score > stale_distant.score
+    assert close.severity == "CRITICAL"
+    assert close.confidence == "HIGH"
+    assert stale_distant.confidence == "LOW"
+    assert stale_distant.limitations
