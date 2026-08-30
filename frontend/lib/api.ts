@@ -7,10 +7,10 @@
  * that assumed the old shape breaks at compile time instead of silently
  * returning `undefined` at runtime.
  *
- * This backend currently covers catalog lookup and SGP4 propagation only.
- * It does NOT (yet) expose conjunction detection or risk scoring — there is
- * no endpoint that returns TCA, miss distance, risk score, or severity.
- * Those stay on mock data (mocks/conjunctions.ts) until that service exists.
+ * This backend covers catalog lookup, SGP4 propagation, and nominal
+ * conjunction screening with risk scoring (POST /api/v1/screen). It does
+ * NOT compute a covariance-based probability of collision — nor does it
+ * claim to; see the `limitations` field on each screening candidate.
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -135,6 +135,64 @@ export function getElements(noradCatId: number): Promise<ElementResponse[]> {
 
 export function getTrajectory(params: TrajectoryParams): Promise<TrajectoryResponse> {
   return request("/api/v1/propagation/trajectory", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// --- screening ---
+//
+// This mirrors app/schemas.py ScreeningRequest / ScreeningResponse /
+// CandidateConjunctionResponse. This IS the conjunction-detection + risk
+// scoring endpoint — the gap noted in earlier comments in this file no
+// longer applies now that the backend exposes it.
+
+export interface ScreeningParams {
+  analysis_time?: string;
+  forecast_horizon_hours?: number;
+  screening_threshold_km?: number;
+  coarse_step_seconds?: number;
+  object_limit?: number;
+}
+
+export type BackendObjectRoleType = "PAYLOAD" | "DEBRIS" | "ROCKET BODY" | "STATION";
+
+export interface ScreeningObjectRef {
+  norad_id: string;
+  name: string;
+  object_type: BackendObjectRoleType;
+}
+
+export interface CandidateConjunctionResponse {
+  event_id: string;
+  primary: ScreeningObjectRef;
+  secondary: ScreeningObjectRef;
+  tca: string;
+  miss_distance_km: number;
+  relative_velocity_km_s: number;
+  risk_score: number;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  data_age_hours: number;
+  forecast_horizon_hours: number;
+  source: string;
+  method: string;
+  limitations: string[];
+  // Backend types each row as a generic string->string dict, not a fixed
+  // {label, value} shape — normalize this on the way in (see
+  // lib/useScreening.ts) rather than assuming its exact keys here.
+  score_breakdown: Record<string, string>[];
+}
+
+export interface ScreeningResponse {
+  analysis_time: string;
+  eligible_objects: number;
+  excluded_objects: number;
+  candidates: CandidateConjunctionResponse[];
+}
+
+export function screenConjunctions(params: ScreeningParams = {}): Promise<ScreeningResponse> {
+  return request("/api/v1/screen", {
     method: "POST",
     body: JSON.stringify(params),
   });

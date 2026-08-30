@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+
 class ObjectResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     norad_cat_id: int
@@ -79,9 +80,12 @@ class ScreeningRequest(BaseModel):
     analysis_time: datetime | None = None
     forecast_horizon_hours: float = Field(default=24, gt=0, le=72)
     screening_threshold_km: float = Field(default=50, gt=0, le=1000)
-    coarse_step_seconds: int = Field(default=60, ge=30, le=300)
-    object_limit: int = Field(default=1000, ge=2, le=5000)
-
+    # Defaults lowered from 60/1000 — at 60s/1000 objects over a 72h horizon
+    # this was ~4,320 timesteps x up to 1000 SGP4 calls each, measured at
+    # ~5 minutes end-to-end. 180s/300 objects cuts both factors and is
+    # still enough resolution + catalog coverage for a demo.
+    coarse_step_seconds: int = Field(default=180, ge=30, le=300)
+    object_limit: int = Field(default=300, ge=2, le=5000)
 
 class ScreeningObjectRef(BaseModel):
     norad_id: str

@@ -2,6 +2,9 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import hashlib
+import json
+import time
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func
@@ -122,10 +125,53 @@ def trajectory(request: TrajectoryRequest, db: Session = Depends(get_db)) -> Tra
         raise _propagation_http_error(exc) from exc
 
 
+# --- Screening cache ---
+#
+# A minimal in-memory cache, not a real precompute/background-job system —
+# that's the actual fix for production, out of scope for a hackathon
+# timeline. This buys two things cheaply: (1) repeated requests with the
+# same rounded params (e.g. re-opening the dashboard, or two judges hitting
+# it back to back) return instantly instead of re-running the full screen,
+# and (2) accidental double-fires (e.g. React StrictMode double-invoke in
+# dev) don't double the backend load.
+#
+# NOT safe for multi-worker/multi-process deployment (each process gets its
+# own cache) — fine for a single `uvicorn --reload` demo process.
+_SCREEN_CACHE: dict[str, tuple[float, dict]] = {}
+_SCREEN_CACHE_TTL_SECONDS = 120
+# analysis_time is intentionally excluded from the cache key and rounded to
+# the nearest 5 minutes server-side before use, so that requests a few
+# seconds apart (e.g. from slider debouncing or a retry) hit the same
+# cache entry instead of each computing a "fresh" result that isn't
+# meaningfully different.
+_ANALYSIS_TIME_BUCKET_SECONDS = 300
+
+
+def _screen_cache_key(request: ScreeningRequest, bucketed_time: datetime) -> str:
+    payload = {
+        "analysis_time_bucket": bucketed_time.isoformat(),
+        "forecast_horizon_hours": request.forecast_horizon_hours,
+        "screening_threshold_km": request.screening_threshold_km,
+        "coarse_step_seconds": request.coarse_step_seconds,
+        "object_limit": request.object_limit,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
 @app.post("/api/v1/screen", response_model=ScreeningResponse, tags=["screening"])
 def screen(request: ScreeningRequest, db: Session = Depends(get_db)) -> ScreeningResponse:
     """Generate nominal close-approach candidates; this does not assign risk scores."""
     analysis_time = request.analysis_time or datetime.now(timezone.utc)
+    bucket_epoch = int(analysis_time.timestamp() // _ANALYSIS_TIME_BUCKET_SECONDS) * _ANALYSIS_TIME_BUCKET_SECONDS
+    bucketed_time = datetime.fromtimestamp(bucket_epoch, tz=timezone.utc)
+    cache_key = _screen_cache_key(request, bucketed_time)
+
+    cached = _SCREEN_CACHE.get(cache_key)
+    if cached is not None:
+        cached_at, cached_result = cached
+        if time.monotonic() - cached_at < _SCREEN_CACHE_TTL_SECONDS:
+            return ScreeningResponse(**cached_result)
+
     result = screen_catalog(
         db,
         ScreeningConfig(
@@ -136,9 +182,11 @@ def screen(request: ScreeningRequest, db: Session = Depends(get_db)) -> Screenin
             object_limit=request.object_limit,
         ),
     )
-    return ScreeningResponse(
+    response = ScreeningResponse(
         analysis_time=result["analysis_time"],
         eligible_objects=result["eligible_objects"],
         excluded_objects=result["excluded_objects"],
         candidates=[CandidateConjunctionResponse.model_validate(item) for item in result["candidates"]],
     )
+    _SCREEN_CACHE[cache_key] = (time.monotonic(), response.model_dump())
+    return response

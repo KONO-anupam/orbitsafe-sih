@@ -40,12 +40,15 @@ function buildTrace(minKm: number, seed: number): { t_minutes: number; distance_
   return points;
 }
 
+const now = new Date();
+const hoursFromNow = (hours: number) => new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString();
+
 export const conjunctions: ConjunctionEvent[] = [
   {
-    event_id: "25544-49044-2026-08-23T12:30:00Z",
+    event_id: `25544-49044-${hoursFromNow(2)}`,
     primary: { norad_id: "25544", name: "ISS (ZARYA)", object_type: "STATION" },
     secondary: { norad_id: "49044", name: "COSMOS 1408 DEB", object_type: "DEBRIS" },
-    tca: "2026-08-23T12:30:00Z",
+    tca: hoursFromNow(2),
     miss_distance_km: 2.4,
     relative_velocity_km_s: 13.8,
     risk_score: 82,
@@ -70,10 +73,10 @@ export const conjunctions: ConjunctionEvent[] = [
     orbit3d: buildOrbit3d(418, 3),
   },
   {
-    event_id: "44713-38341-2026-08-23T18:05:00Z",
+    event_id: `44713-38341-${hoursFromNow(6)}`,
     primary: { norad_id: "44713", name: "STARLINK-1130", object_type: "PAYLOAD" },
     secondary: { norad_id: "38341", name: "FENGYUN 1C DEB", object_type: "DEBRIS" },
-    tca: "2026-08-23T18:05:00Z",
+    tca: hoursFromNow(6),
     miss_distance_km: 3.9,
     relative_velocity_km_s: 14.5,
     risk_score: 71,
@@ -98,10 +101,10 @@ export const conjunctions: ConjunctionEvent[] = [
     orbit3d: buildOrbit3d(549, 11),
   },
   {
-    event_id: "43205-27386-2026-08-24T02:40:00Z",
+    event_id: `43205-27386-${hoursFromNow(12)}`,
     primary: { norad_id: "43205", name: "ONEWEB-0012", object_type: "PAYLOAD" },
     secondary: { norad_id: "27386", name: "COSMOS 2251 DEB", object_type: "DEBRIS" },
-    tca: "2026-08-24T02:40:00Z",
+    tca: hoursFromNow(12),
     miss_distance_km: 8.7,
     relative_velocity_km_s: 11.2,
     risk_score: 54,
@@ -126,10 +129,10 @@ export const conjunctions: ConjunctionEvent[] = [
     orbit3d: buildOrbit3d(786, 22),
   },
   {
-    event_id: "48274-33759-2026-08-23T09:15:00Z",
+    event_id: `48274-33759-${hoursFromNow(18)}`,
     primary: { norad_id: "48274", name: "STARLINK-2231", object_type: "PAYLOAD" },
     secondary: { norad_id: "33759", name: "IRIDIUM 33 DEB", object_type: "DEBRIS" },
-    tca: "2026-08-23T09:15:00Z",
+    tca: hoursFromNow(18),
     miss_distance_km: 14.2,
     relative_velocity_km_s: 9.7,
     risk_score: 38,
@@ -154,10 +157,10 @@ export const conjunctions: ConjunctionEvent[] = [
     orbit3d: buildOrbit3d(611, 6),
   },
   {
-    event_id: "39084-40889-2026-08-24T14:50:00Z",
+    event_id: `39084-40889-${hoursFromNow(24)}`,
     primary: { norad_id: "39084", name: "LANDSAT 8", object_type: "PAYLOAD" },
     secondary: { norad_id: "40889", name: "OBJECT DEB", object_type: "DEBRIS" },
-    tca: "2026-08-24T14:50:00Z",
+    tca: hoursFromNow(24),
     miss_distance_km: 34.6,
     relative_velocity_km_s: 7.4,
     risk_score: 19,
@@ -182,10 +185,10 @@ export const conjunctions: ConjunctionEvent[] = [
     orbit3d: buildOrbit3d(705, 40),
   },
   {
-    event_id: "37820-45019-2026-08-23T21:00:00Z",
+    event_id: `37820-45019-${hoursFromNow(30)}`,
     primary: { norad_id: "37820", name: "NOAA 19", object_type: "PAYLOAD" },
     secondary: { norad_id: "45019", name: "SL-16 R/B DEB", object_type: "ROCKET BODY" },
-    tca: "2026-08-23T21:00:00Z",
+    tca: hoursFromNow(30),
     miss_distance_km: 6.1,
     relative_velocity_km_s: 12.9,
     risk_score: 63,

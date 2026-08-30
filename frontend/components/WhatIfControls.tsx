@@ -6,12 +6,18 @@ export default function WhatIfControls({
   horizon,
   setHorizon,
   matchCount,
+  isDirty,
+  onRunScreening,
+  loading,
 }: {
   threshold: number;
   setThreshold: (v: number) => void;
   horizon: number;
   setHorizon: (v: number) => void;
   matchCount: number;
+  isDirty: boolean;
+  onRunScreening: () => void;
+  loading: boolean;
 }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-8">
@@ -41,10 +47,7 @@ export default function WhatIfControls({
           className="orbit-slider flex-1"
           aria-label="Screening distance threshold in kilometers"
         />
-        <span
-          className="font-mono text-xs tabular w-16 text-right"
-          style={{ color: "var(--accent)" }}
-        >
+        <span className="font-mono text-xs tabular w-16 text-right" style={{ color: "var(--accent)" }}>
           {threshold} km
         </span>
       </label>
@@ -63,13 +66,26 @@ export default function WhatIfControls({
           className="orbit-slider flex-1"
           aria-label="Forecast horizon in hours"
         />
-        <span
-          className="font-mono text-xs tabular w-16 text-right"
-          style={{ color: "var(--accent)" }}
-        >
+        <span className="font-mono text-xs tabular w-16 text-right" style={{ color: "var(--accent)" }}>
           {horizon} h
         </span>
       </label>
+
+      {/* Screening is expensive (can take minutes over the full catalog),
+          so slider changes are staged locally and only sent to the backend
+          when this button is pressed — not on every drag tick. */}
+      <button
+        onClick={onRunScreening}
+        disabled={loading}
+        className="shrink-0 px-3 py-1.5 rounded-md font-mono text-[11px] uppercase tracking-[0.08em] transition-colors disabled:opacity-50"
+        style={{
+          color: isDirty && !loading ? "var(--bg)" : "var(--text-secondary)",
+          background: isDirty && !loading ? "var(--accent)" : "var(--surface-2)",
+          border: "1px solid var(--border-strong)",
+        }}
+      >
+        {loading ? "screening…" : isDirty ? "run screening" : "re-run"}
+      </button>
 
       <style>{`
         .orbit-slider {

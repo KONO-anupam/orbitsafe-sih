@@ -1,12 +1,15 @@
 import { ConjunctionEvent } from "@/lib/types";
+import { ObjectCountSource } from "@/lib/useLiveObjectCount";
 import CountUp from "./CountUp";
 
 export default function SummaryStats({
   events,
   objectsTracked,
+  objectsTrackedSource,
 }: {
   events: ConjunctionEvent[];
   objectsTracked: number;
+  objectsTrackedSource?: ObjectCountSource;
 }) {
   const highRisk = events.filter((e) => e.severity === "CRITICAL" || e.severity === "HIGH").length;
   const nearest = events.reduce((min, e) => Math.min(min, e.miss_distance_km), Infinity);
@@ -18,8 +21,14 @@ export default function SummaryStats({
     suffix: string;
     decimals?: number;
     accent?: boolean;
+    tag?: string;
   }[] = [
-    { label: "Objects tracked", value: objectsTracked, suffix: "" },
+    {
+      label: "Objects tracked",
+      value: objectsTracked,
+      suffix: "",
+      tag: objectsTrackedSource === "mock" ? "mock" : undefined,
+    },
     { label: "Conjunctions detected", value: events.length, suffix: "" },
     { label: "High-risk events", value: highRisk, suffix: "", accent: highRisk > 0 },
     { label: "Nearest approach", value: nearest === Infinity ? 0 : nearest, suffix: " km", decimals: 1 },
@@ -31,10 +40,18 @@ export default function SummaryStats({
       {stats.map((s) => (
         <div key={s.label} className="p-4" style={{ borderColor: "var(--border)" }}>
           <div
-            className="text-[10px] uppercase tracking-[0.14em] font-mono mb-1.5"
+            className="text-[10px] uppercase tracking-[0.14em] font-mono mb-1.5 flex items-center gap-1.5"
             style={{ color: "var(--text-tertiary)" }}
           >
             {s.label}
+            {s.tag && (
+              <span
+                className="px-1 py-0.5 rounded-sm text-[8px]"
+                style={{ color: "var(--medium)", background: "var(--medium-glow)" }}
+              >
+                {s.tag}
+              </span>
+            )}
           </div>
           <div
             className="font-display text-2xl sm:text-3xl font-semibold tabular"

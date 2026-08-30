@@ -1,21 +1,55 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import MissionBar from "@/components/MissionBar";
 import SummaryStats from "@/components/SummaryStats";
 import WhatIfControls from "@/components/WhatIfControls";
 import AlertTable from "@/components/AlertTable";
 import EventDetailPanel from "@/components/EventDetailPanel";
-import { conjunctions, objectsTracked } from "@/mocks/conjunctions";
 import { useLiveObjectCount } from "@/lib/useLiveObjectCount";
+import { useScreening } from "@/lib/useScreening";
 
 export default function Home() {
-  const [threshold, setThreshold] = useState(50);
-  const [horizon, setHorizon] = useState(72);
-  const [selectedId, setSelectedId] = useState<string | null>(conjunctions[0]?.event_id ?? null);
+  // Pending values track the sliders instantly for UI feedback. Applied
+  // values are what's actually sent to the backend, and only change when
+  // "run screening" is pressed — screening is too expensive to fire on
+  // every drag tick.
+  const [pendingThreshold, setPendingThreshold] = useState(50);
+  const [pendingHorizon, setPendingHorizon] = useState(72);
+  const [appliedThreshold, setAppliedThreshold] = useState(50);
+  const [appliedHorizon, setAppliedHorizon] = useState(72);
+  const [trigger, setTrigger] = useState(0);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+
   const liveObjectCount = useLiveObjectCount();
+  const screening = useScreening(appliedThreshold, appliedHorizon, trigger);
+
+  const isDirty = pendingThreshold !== appliedThreshold || pendingHorizon !== appliedHorizon;
+
+  function runScreening() {
+    setAppliedThreshold(pendingThreshold);
+    setAppliedHorizon(pendingHorizon);
+    setTrigger((t) => t + 1);
+  }
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!screening.loading) {
+      // Intentional: resets the timer synchronously the moment a screening
+      // attempt ends, so a stale elapsed count never lingers into the next
+      // "screening…" cycle.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setElapsedSeconds(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [screening.loading]);
 
   useEffect(() => {
     // Intentional: `now` starts null so server and first client render match
@@ -26,15 +60,15 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      conjunctions.filter(
-        (e) => e.miss_distance_km <= threshold && e.forecast_horizon_hours <= horizon
-      ),
-    [threshold, horizon]
-  );
+  useEffect(() => {
+    const stillPresent = screening.events.some((e) => e.event_id === selectedId);
+    if (!stillPresent) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedId(screening.events[0]?.event_id ?? null);
+    }
+  }, [screening.events, selectedId]);
 
-  const selectedEvent = filtered.find((e) => e.event_id === selectedId) ?? null;
+  const selectedEvent = screening.events.find((e) => e.event_id === selectedId) ?? null;
 
   function handleSelect(id: string) {
     setSelectedId(id);
@@ -42,7 +76,6 @@ export default function Home() {
   }
 
   if (!now) {
-    // avoid hydration mismatch on the clock; render nothing on the very first tick
     return (
       <div style={{ background: "var(--bg)" }} className="min-h-dvh">
         <MissionBar />
@@ -50,57 +83,110 @@ export default function Home() {
     );
   }
 
+  const statusLabel = screening.loading
+    ? elapsedSeconds > 0
+      ? `screening… ${elapsedSeconds}s`
+      : "screening…"
+    : screening.source === "live"
+    ? "live"
+    : screening.source === "stale"
+    ? "last known — reconnecting"
+    : "no live data";
+
+  const statusStyle = screening.loading
+    ? { color: "var(--text-tertiary)", background: "var(--surface-2)" }
+    : screening.source === "live"
+    ? { color: "var(--safe)", background: "var(--safe-glow)" }
+    : screening.source === "stale"
+    ? { color: "var(--medium)", background: "var(--medium-glow)" }
+    : { color: "var(--critical)", background: "var(--critical-glow)" };
+
   return (
     <div style={{ background: "var(--bg)" }} className="min-h-dvh flex flex-col">
-      {/* MissionBar stays the one full-bleed strip, deliberately — a sticky
-          top instrument bar, like a real app's toolbar, is expected to sit
-          flush with the viewport edge. Everything below it floats as cards
-          on the void with real gaps, per the redesign. */}
       <MissionBar />
 
       <main className="flex-1 flex flex-col gap-6 p-4 sm:p-6">
-        {/* summary stats card */}
         <div className="panel-card overflow-hidden">
-          <SummaryStats events={filtered} objectsTracked={liveObjectCount ?? objectsTracked} />
+          <SummaryStats
+            events={screening.events}
+            objectsTracked={liveObjectCount.count}
+            objectsTrackedSource={liveObjectCount.source}
+          />
         </div>
 
-        {/* what-if controls card */}
         <div className="panel-card p-4 sm:p-5">
           <WhatIfControls
-            threshold={threshold}
-            setThreshold={setThreshold}
-            horizon={horizon}
-            setHorizon={setHorizon}
-            matchCount={filtered.length}
+            threshold={pendingThreshold}
+            setThreshold={setPendingThreshold}
+            horizon={pendingHorizon}
+            setHorizon={setPendingHorizon}
+            matchCount={screening.events.length}
+            isDirty={isDirty}
+            onRunScreening={runScreening}
+            loading={screening.loading}
           />
         </div>
 
         <div className="flex-1 grid lg:grid-cols-[1fr_400px] gap-6 min-h-0">
-          {/* alert table card */}
           <section className="panel-card overflow-hidden min-w-0 flex flex-col">
             <div
               className="px-5 py-4 border-b flex items-center justify-between shrink-0"
               style={{ borderColor: "var(--border)" }}
             >
-              <h1 className="font-display text-sm font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--text-secondary)" }}>
-                Screened conjunctions
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-sm font-semibold uppercase tracking-[0.1em]" style={{ color: "var(--text-secondary)" }}>
+                  Screened conjunctions
+                </h1>
+                <span
+                  className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md"
+                  style={statusStyle}
+                >
+                  {statusLabel}
+                </span>
+                {screening.source !== "live" && !screening.loading && (
+                  <button
+                    onClick={screening.retry}
+                    className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md border transition-colors"
+                    style={{ color: "var(--text-secondary)", borderColor: "var(--border-strong)" }}
+                  >
+                    retry
+                  </button>
+                )}
+              </div>
               <span className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                 sorted by risk
               </span>
             </div>
-            <AlertTable events={filtered} selectedId={selectedId} onSelect={handleSelect} now={now} />
+
+            {screening.error && screening.source !== "live" && (
+              <div
+                className="px-5 py-2 border-b font-mono text-[10px]"
+                style={{ borderColor: "var(--border)", color: "var(--text-tertiary)" }}
+              >
+                {screening.error}
+              </div>
+            )}
+
+            {screening.source === "error" && screening.events.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+                <div className="font-mono text-xs tracking-[0.14em] uppercase mb-2" style={{ color: "var(--critical)" }}>
+                  no live data
+                </div>
+                <p className="max-w-sm text-sm" style={{ color: "var(--text-secondary)" }}>
+                  The screening backend is unreachable or the request timed out. This can take a
+                  while over the full catalog — check that the backend is running, then retry.
+                </p>
+              </div>
+            ) : (
+              <AlertTable events={screening.events} selectedId={selectedId} onSelect={handleSelect} now={now} />
+            )}
           </section>
 
-          {/* detail panel — desktop, always visible; renders its own stack
-              of panel-cards internally, spaced with the same gap-6 rhythm */}
           <aside className="hidden lg:block min-h-0">
             <EventDetailPanel event={selectedEvent} onClose={() => setSelectedId(null)} />
           </aside>
         </div>
       </main>
-
-      {/* detail panel — mobile, slide-up sheet */}
       {mobileDetailOpen && selectedEvent && (
         <div className="lg:hidden fixed inset-0 z-40 flex flex-col justify-end">
           <button
