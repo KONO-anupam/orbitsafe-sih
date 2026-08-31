@@ -94,7 +94,7 @@ export function useScreening(
       // Stopgap only — see doc comment above. Drop these once the backend
       // precomputes/caches instead of screening the whole catalog live.
       coarse_step_seconds: 180,
-      object_limit: 100,
+      object_limit: 50,
     })
       .then((res) => {
         if (cancelled) return;
