@@ -51,7 +51,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://orbitsafe-sih.vercel.app",
+        "https://orbitsafe-sih-mdna.vercel.app",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
