@@ -7,6 +7,7 @@ import WhatIfControls from "@/components/WhatIfControls";
 import AlertTable from "@/components/AlertTable";
 import EventDetailPanel from "@/components/EventDetailPanel";
 import AssetExposurePanel from "@/components/AssetExposurePanel";
+import SituationsPanel from "@/components/SituationsPanel";
 import { useLiveObjectCount } from "@/lib/useLiveObjectCount";
 import { useScreening } from "@/lib/useScreening";
 import { MissionProfileKey } from "@/lib/missionProfiles";
@@ -139,6 +140,13 @@ export default function Home() {
         </div>
 
         <AssetExposurePanel
+          events={screening.events}
+          evolution={screening.evolution.byEventId}
+          now={now}
+          onSelectEvent={handleSelect}
+        />
+
+        <SituationsPanel
           events={screening.events}
           evolution={screening.evolution.byEventId}
           now={now}
