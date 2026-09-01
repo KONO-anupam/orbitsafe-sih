@@ -8,6 +8,7 @@ import AlertTable from "@/components/AlertTable";
 import EventDetailPanel from "@/components/EventDetailPanel";
 import { useLiveObjectCount } from "@/lib/useLiveObjectCount";
 import { useScreening } from "@/lib/useScreening";
+import { MissionProfileKey } from "@/lib/missionProfiles";
 
 export default function Home() {
   // Pending values track the sliders instantly for UI feedback. Applied
@@ -16,8 +17,10 @@ export default function Home() {
   // every drag tick.
   const [pendingThreshold, setPendingThreshold] = useState(50);
   const [pendingHorizon, setPendingHorizon] = useState(72);
+  const [pendingProfile, setPendingProfile] = useState<MissionProfileKey>("balanced");
   const [appliedThreshold, setAppliedThreshold] = useState(50);
   const [appliedHorizon, setAppliedHorizon] = useState(72);
+  const [appliedProfile, setAppliedProfile] = useState<MissionProfileKey>("balanced");
   const [trigger, setTrigger] = useState(0);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -25,13 +28,17 @@ export default function Home() {
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const liveObjectCount = useLiveObjectCount();
-  const screening = useScreening(appliedThreshold, appliedHorizon, trigger);
+  const screening = useScreening(appliedThreshold, appliedHorizon, trigger, appliedProfile);
 
-  const isDirty = pendingThreshold !== appliedThreshold || pendingHorizon !== appliedHorizon;
+  const isDirty =
+    pendingThreshold !== appliedThreshold ||
+    pendingHorizon !== appliedHorizon ||
+    pendingProfile !== appliedProfile;
 
   function runScreening() {
     setAppliedThreshold(pendingThreshold);
     setAppliedHorizon(pendingHorizon);
+    setAppliedProfile(pendingProfile);
     setTrigger((t) => t + 1);
   }
 
@@ -121,6 +128,8 @@ export default function Home() {
             setThreshold={setPendingThreshold}
             horizon={pendingHorizon}
             setHorizon={setPendingHorizon}
+            missionProfile={pendingProfile}
+            setMissionProfile={setPendingProfile}
             matchCount={screening.events.length}
             isDirty={isDirty}
             onRunScreening={runScreening}
@@ -192,6 +201,7 @@ export default function Home() {
                 onSelect={handleSelect}
                 now={now}
                 evolution={screening.evolution.byEventId}
+                missionProfileActive={appliedProfile !== "balanced"}
               />
             )}
           </section>

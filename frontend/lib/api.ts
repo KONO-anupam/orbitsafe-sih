@@ -148,12 +148,20 @@ export function getTrajectory(params: TrajectoryParams): Promise<TrajectoryRespo
 // scoring endpoint — the gap noted in earlier comments in this file no
 // longer applies now that the backend exposes it.
 
+export interface MissionProfileWeights {
+  distance_weight: number;
+  velocity_weight: number;
+  urgency_weight: number;
+  context_weight: number;
+}
+
 export interface ScreeningParams {
   analysis_time?: string;
   forecast_horizon_hours?: number;
   screening_threshold_km?: number;
   coarse_step_seconds?: number;
   object_limit?: number;
+  mission_profile?: MissionProfileWeights;
 }
 
 export type BackendObjectRoleType = "PAYLOAD" | "DEBRIS" | "ROCKET BODY" | "STATION";
@@ -183,6 +191,10 @@ export interface CandidateConjunctionResponse {
   // {label, value} shape — normalize this on the way in (see
   // lib/useScreening.ts) rather than assuming its exact keys here.
   score_breakdown: Record<string, string>[];
+  next_step: "MONITOR" | "INVESTIGATE" | "REFRESH_DATA";
+  next_step_reason: string;
+  mission_priority: number;
+  mission_breakdown: Record<string, string>[];
 }
 
 export interface ScreeningResponse {

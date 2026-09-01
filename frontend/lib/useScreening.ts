@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, CandidateConjunctionResponse, screenConjunctions } from "./api";
 import { ConjunctionEvent } from "./types";
 import { computeEvolution, EvolutionResult } from "./eventEvolution";
+import { MISSION_PROFILES, MissionProfileKey } from "./missionProfiles";
 
 export type ScreeningSource = "live" | "stale" | "error";
 
@@ -55,6 +56,10 @@ function toConjunctionEvent(candidate: CandidateConjunctionResponse): Conjunctio
     method: candidate.method,
     limitations: candidate.limitations,
     score_breakdown: normalizeBreakdown(candidate.score_breakdown),
+    next_step: candidate.next_step,
+    next_step_reason: candidate.next_step_reason,
+    mission_priority: candidate.mission_priority,
+    mission_breakdown: normalizeBreakdown(candidate.mission_breakdown),
   };
 }
 
@@ -77,7 +82,8 @@ const EMPTY_EVOLUTION: EvolutionResult = { byEventId: new Map(), resolvedCount: 
 export function useScreening(
   thresholdKm: number,
   horizonHours: number,
-  trigger: number
+  trigger: number,
+  missionProfileKey: MissionProfileKey = "balanced"
 ): ScreeningResult {
   const [events, setEvents] = useState<ConjunctionEvent[]>([]);
   const [source, setSource] = useState<ScreeningSource>("error");
@@ -107,6 +113,7 @@ export function useScreening(
       // precomputes/caches instead of screening the whole catalog live.
       coarse_step_seconds: 180,
       object_limit: 50,
+      mission_profile: MISSION_PROFILES[missionProfileKey],
     })
       .then((res) => {
         if (cancelled) return;

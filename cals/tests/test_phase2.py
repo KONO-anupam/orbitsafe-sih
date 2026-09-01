@@ -128,6 +128,8 @@ def test_screening_generates_refined_nominal_candidate(db):
     assert 0 <= candidate["risk_score"] <= 100
     assert candidate["severity"] in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
     assert candidate["confidence"] in {"HIGH", "MEDIUM", "LOW"}
+    assert candidate["next_step"] in {"MONITOR", "INVESTIGATE", "REFRESH_DATA"}
+    assert isinstance(candidate["next_step_reason"], str) and candidate["next_step_reason"]
     assert candidate["score_breakdown"]
 
 
@@ -154,5 +156,7 @@ def test_risk_score_is_explainable_and_penalizes_stale_data():
     assert close.score > stale_distant.score
     assert close.severity == "CRITICAL"
     assert close.confidence == "HIGH"
+    assert close.next_step in {"INVESTIGATE", "MONITOR"}
     assert stale_distant.confidence == "LOW"
+    assert stale_distant.next_step in {"MONITOR", "REFRESH_DATA"}
     assert stale_distant.limitations

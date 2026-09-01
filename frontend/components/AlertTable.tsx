@@ -21,18 +21,33 @@ function trendBadge(status: EvolutionStatus | undefined): { label: string; color
   }
 }
 
+function nextStepBadge(step: ConjunctionEvent["next_step"]): { label: string; color: string } | null {
+  switch (step) {
+    case "REFRESH_DATA":
+      return { label: "Refresh data", color: "var(--medium)" };
+    case "INVESTIGATE":
+      return { label: "Investigate", color: "var(--critical)" };
+    case "MONITOR":
+      return { label: "Monitor", color: "var(--text-tertiary)" };
+    default:
+      return null;
+  }
+}
+
 export default function AlertTable({
   events,
   selectedId,
   onSelect,
   now,
   evolution,
+  missionProfileActive = false,
 }: {
   events: ConjunctionEvent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   now: Date;
   evolution: Map<string, EventEvolution>;
+  missionProfileActive?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("risk_score");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -56,13 +71,15 @@ export default function AlertTable({
     }
   }
 
-  const columns: { key: SortKey | "objects" | "confidence" | "trend"; label: string }[] = [
+  const columns: { key: SortKey | "objects" | "confidence" | "trend" | "next_step" | "mission"; label: string }[] = [
     { key: "trend", label: "Trend" },
     { key: "objects", label: "Objects" },
     { key: "tca", label: "TCA" },
     { key: "miss_distance_km", label: "Miss dist." },
     { key: "relative_velocity_km_s", label: "Rel. vel." },
     { key: "confidence", label: "Confidence" },
+    { key: "next_step", label: "Next Step" },
+    ...(missionProfileActive ? [{ key: "mission" as const, label: "Mission" }] : []),
     { key: "risk_score", label: "Risk" },
   ];
 
@@ -106,6 +123,7 @@ export default function AlertTable({
         <tbody>
           {sorted.map((e) => {
             const badge = trendBadge(evolution.get(e.event_id)?.status);
+            const stepBadge = nextStepBadge(e.next_step);
             return (
               <tr
                 key={e.event_id}
@@ -165,6 +183,25 @@ export default function AlertTable({
                   </span>
                 </td>
                 <td className="px-4 py-3">
+                  {stepBadge ? (
+                    <span
+                      className="font-mono text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md border"
+                      style={{ color: stepBadge.color, borderColor: stepBadge.color + "55" }}
+                    >
+                      {stepBadge.label}
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                      —
+                    </span>
+                  )}
+                </td>
+                {missionProfileActive && (
+                  <td className="px-4 py-3 font-mono text-sm tabular" style={{ color: "var(--accent)" }}>
+                    {e.mission_priority ?? "—"}
+                  </td>
+                )}
+                <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div
                       className="font-display font-semibold tabular text-sm"
@@ -190,6 +227,7 @@ export default function AlertTable({
       <div className="md:hidden divide-y" style={{ borderColor: "var(--border)" }}>
         {sorted.map((e) => {
           const badge = trendBadge(evolution.get(e.event_id)?.status);
+          const stepBadge = nextStepBadge(e.next_step);
           return (
             <button
               key={e.event_id}
@@ -229,8 +267,18 @@ export default function AlertTable({
                   {e.risk_score}
                 </span>
               </div>
-              <div className="font-mono text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                TCA in {timeUntil(e.tca, now)}
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                  TCA in {timeUntil(e.tca, now)}
+                </span>
+                {stepBadge && (
+                  <span
+                    className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md border"
+                    style={{ color: stepBadge.color, borderColor: stepBadge.color + "55" }}
+                  >
+                    {stepBadge.label}
+                  </span>
+                )}
               </div>
             </button>
           );

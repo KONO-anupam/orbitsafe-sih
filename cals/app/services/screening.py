@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import MAX_ELEMENT_AGE_DAYS, MAX_FUTURE_ELEMENT_HOURS
 from app.models import OrbitalElementSet, OrbitalObject
 from app.services.sgp4_adapter import satrec_from_element_set
-from app.services.scoring import score_candidate
+from app.services.scoring import MissionProfile, score_candidate
 from app.services.validation import utc_datetime
 
 
@@ -45,6 +45,7 @@ class ScreeningConfig:
     screening_threshold_km: float = 50.0
     coarse_step_seconds: int = 60
     object_limit: int = 1000
+    mission_profile: MissionProfile | None = None
 
     @property
     def broad_phase_gate_km(self) -> float:
@@ -250,6 +251,7 @@ def _candidate_response(
         data_age_hours=data_age,
         primary_object_type=primary_type,
         secondary_object_type=secondary_type,
+        profile=config.mission_profile,
     )
     limitations.extend(risk.limitations)
     return {
@@ -276,6 +278,10 @@ def _candidate_response(
         "method": "SGP4 nominal screening with spatial broad phase and local TCA refinement",
         "limitations": limitations,
         "score_breakdown": risk.breakdown,
+        "next_step": risk.next_step,
+        "next_step_reason": risk.next_step_reason,
+        "mission_priority": risk.mission_priority,
+        "mission_breakdown": risk.mission_breakdown,
     }
 
 
@@ -288,6 +294,7 @@ def screen_catalog(db: Session, config: ScreeningConfig) -> dict:
         screening_threshold_km=config.screening_threshold_km,
         coarse_step_seconds=config.coarse_step_seconds,
         object_limit=config.object_limit,
+        mission_profile=config.mission_profile,
     )
     objects, excluded = _select_screened_objects(db, config)
     end_time = analysis_time + timedelta(hours=config.forecast_horizon_hours)

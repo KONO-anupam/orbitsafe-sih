@@ -74,6 +74,19 @@ class TrajectoryResponse(BaseModel):
     states: list[StateVectorResponse]
 
 
+class MissionProfile(BaseModel):
+    """Optional operator-defined weighting for mission-aware prioritization.
+
+    Multiplies each component's contribution before re-summing; defaults of
+    1.0 reproduce the baseline nominal score exactly.
+    """
+
+    distance_weight: float = Field(default=1.0, ge=0, le=3)
+    velocity_weight: float = Field(default=1.0, ge=0, le=3)
+    urgency_weight: float = Field(default=1.0, ge=0, le=3)
+    context_weight: float = Field(default=1.0, ge=0, le=3)
+
+
 class ScreeningRequest(BaseModel):
     """Controls for an on-demand nominal conjunction screen."""
 
@@ -86,6 +99,8 @@ class ScreeningRequest(BaseModel):
     # still enough resolution + catalog coverage for a demo.
     coarse_step_seconds: int = Field(default=180, ge=30, le=300)
     object_limit: int = Field(default=300, ge=2, le=5000)
+    mission_profile: MissionProfile | None = None
+
 
 class ScreeningObjectRef(BaseModel):
     norad_id: str
@@ -111,6 +126,10 @@ class CandidateConjunctionResponse(BaseModel):
     method: str
     limitations: list[str]
     score_breakdown: list[dict[str, str]]
+    next_step: Literal["MONITOR", "INVESTIGATE", "REFRESH_DATA"]
+    next_step_reason: str
+    mission_priority: int = Field(ge=0, le=100)
+    mission_breakdown: list[dict[str, str]]
 
 
 class ScreeningResponse(BaseModel):

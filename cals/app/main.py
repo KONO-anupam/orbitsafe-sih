@@ -31,6 +31,7 @@ from app.services.propagation import (
     generate_trajectory,
     propagate_position,
 )
+from app.services.scoring import MissionProfile as ScoringMissionProfile
 from app.services.screening import ScreeningConfig, screen_catalog
 
 
@@ -157,6 +158,7 @@ def _screen_cache_key(request: ScreeningRequest, bucketed_time: datetime) -> str
         "screening_threshold_km": request.screening_threshold_km,
         "coarse_step_seconds": request.coarse_step_seconds,
         "object_limit": request.object_limit,
+        "mission_profile": request.mission_profile.model_dump() if request.mission_profile else None,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -175,6 +177,15 @@ def screen(request: ScreeningRequest, db: Session = Depends(get_db)) -> Screenin
         if time.monotonic() - cached_at < _SCREEN_CACHE_TTL_SECONDS:
             return ScreeningResponse(**cached_result)
 
+    mission_profile = None
+    if request.mission_profile is not None:
+        mission_profile = ScoringMissionProfile(
+            distance_weight=request.mission_profile.distance_weight,
+            velocity_weight=request.mission_profile.velocity_weight,
+            urgency_weight=request.mission_profile.urgency_weight,
+            context_weight=request.mission_profile.context_weight,
+        )
+
     result = screen_catalog(
         db,
         ScreeningConfig(
@@ -183,6 +194,7 @@ def screen(request: ScreeningRequest, db: Session = Depends(get_db)) -> Screenin
             screening_threshold_km=request.screening_threshold_km,
             coarse_step_seconds=request.coarse_step_seconds,
             object_limit=request.object_limit,
+            mission_profile=mission_profile,
         ),
     )
     response = ScreeningResponse(

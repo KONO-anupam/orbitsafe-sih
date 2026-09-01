@@ -22,6 +22,42 @@
     }
   }
 
+function nextStepMeta(step: ConjunctionEvent["next_step"]): { label: string; color: string; glow: string } | null {
+  switch (step) {
+    case "REFRESH_DATA":
+      return { label: "Refresh data", color: "var(--medium)", glow: "var(--medium-glow)" };
+    case "INVESTIGATE":
+      return { label: "Investigate", color: "var(--critical)", glow: "var(--critical-glow)" };
+    case "MONITOR":
+      return { label: "Monitor", color: "var(--text-tertiary)", glow: "var(--surface-2)" };
+    default:
+      return null;
+  }
+}
+
+function NextStepCard({ event }: { event: ConjunctionEvent }) {
+  const meta = nextStepMeta(event.next_step);
+  if (!meta || !event.next_step_reason) return null;
+  return (
+    <div className="panel-card p-5">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>
+          next step
+        </span>
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-md"
+          style={{ color: meta.color, background: meta.glow }}
+        >
+          {meta.label}
+        </span>
+      </div>
+      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        {event.next_step_reason}
+      </p>
+    </div>
+  );
+}
+
   function EvolutionCard({ evolution }: { evolution: EventEvolution }) {
     const meta = evolutionMeta(evolution.status);
     const scoreDeltaLabel = evolution.scoreDelta > 0 ? `+${evolution.scoreDelta}` : `${evolution.scoreDelta}`;
@@ -202,7 +238,7 @@
             ×
           </button>
         </div>
-
+       <NextStepCard event={event} />
         {evolution && <EvolutionCard evolution={evolution} />}
 
         {/* orbit geometry card: 3D globe with 2D fallback */}
@@ -324,6 +360,14 @@
               {event.risk_score}<span className="text-xs font-mono" style={{ color: "var(--text-tertiary)" }}>/100</span>
             </span>
           </div>
+          {event.mission_priority !== undefined && event.mission_priority !== event.risk_score && (
+            <div className="flex items-center justify-between text-xs mb-3 pb-3 border-b" style={{ borderColor: "var(--border)" }}>
+              <span style={{ color: "var(--text-secondary)" }}>Mission-weighted priority</span>
+              <span className="font-mono tabular" style={{ color: "var(--accent)" }}>
+                {event.mission_priority}/100
+              </span>
+            </div>
+          )}
           <dl className="space-y-1.5">
             {event.score_breakdown?.map((row) => (
               <div key={row.label} className="flex items-center justify-between text-sm">

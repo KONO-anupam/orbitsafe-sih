@@ -42,6 +42,10 @@ export interface ConjunctionEvent {
     primary: OrbitalElements3D;
     secondary: OrbitalElements3D;
   };
+  next_step?: "MONITOR" | "INVESTIGATE" | "REFRESH_DATA";
+  next_step_reason?: string;
+  mission_priority?: number;
+  mission_breakdown?: { label: string; value: string }[];
 }
 
 export interface OrbitalElements3D {
