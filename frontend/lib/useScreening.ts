@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, CandidateConjunctionResponse, screenConjunctions } from "./api";
 import { ConjunctionEvent } from "./types";
+import { computeEvolution, EvolutionResult } from "./eventEvolution";
 
 export type ScreeningSource = "live" | "stale" | "error";
 
@@ -18,6 +19,10 @@ export interface ScreeningResult {
   loading: boolean;
   error: string | null;
   retry: () => void;
+  /** Diff of this run's events against the previous successful run's
+   *  events, matched by object pair (not event_id — see
+   *  lib/eventEvolution.ts). Empty on the first successful run. */
+  evolution: EvolutionResult;
 }
 
 function normalizeBreakdown(
@@ -53,6 +58,8 @@ function toConjunctionEvent(candidate: CandidateConjunctionResponse): Conjunctio
   };
 }
 
+const EMPTY_EVOLUTION: EvolutionResult = { byEventId: new Map(), resolvedCount: 0 };
+
 /**
  * Drives the dashboard's conjunction list from POST /api/v1/screen.
  *
@@ -77,7 +84,12 @@ export function useScreening(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [evolution, setEvolution] = useState<EvolutionResult>(EMPTY_EVOLUTION);
   const hasLiveDataRef = useRef(false);
+  // Snapshot of the events from the last *successful* run only — a failed
+  // fetch never overwrites this, so evolution always compares against the
+  // last known-good state rather than against nothing.
+  const previousEventsRef = useRef<ConjunctionEvent[] | null>(null);
 
   const retry = useCallback(() => setRetryCount((c) => c + 1), []);
 
@@ -98,7 +110,10 @@ export function useScreening(
     })
       .then((res) => {
         if (cancelled) return;
-        setEvents(res.candidates.map(toConjunctionEvent));
+        const nextEvents = res.candidates.map(toConjunctionEvent);
+        setEvolution(computeEvolution(nextEvents, previousEventsRef.current));
+        previousEventsRef.current = nextEvents;
+        setEvents(nextEvents);
         setSource("live");
         setError(null);
         hasLiveDataRef.current = true;
@@ -121,5 +136,5 @@ export function useScreening(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trigger, retryCount]);
 
-  return { events, source, loading, error, retry };
+  return { events, source, loading, error, retry, evolution };
 }

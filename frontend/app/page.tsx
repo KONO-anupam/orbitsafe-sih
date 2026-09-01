@@ -69,6 +69,7 @@ export default function Home() {
   }, [screening.events, selectedId]);
 
   const selectedEvent = screening.events.find((e) => e.event_id === selectedId) ?? null;
+  const selectedEvolution = selectedEvent ? screening.evolution.byEventId.get(selectedEvent.event_id) : undefined;
 
   function handleSelect(id: string) {
     setSelectedId(id);
@@ -153,9 +154,16 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              <span className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                sorted by risk
-              </span>
+              <div className="flex items-center gap-3">
+                {screening.evolution.resolvedCount > 0 && (
+                  <span className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    {screening.evolution.resolvedCount} resolved
+                  </span>
+                )}
+                <span className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  sorted by risk
+                </span>
+              </div>
             </div>
 
             {screening.error && screening.source !== "live" && (
@@ -178,12 +186,18 @@ export default function Home() {
                 </p>
               </div>
             ) : (
-              <AlertTable events={screening.events} selectedId={selectedId} onSelect={handleSelect} now={now} />
+              <AlertTable
+                events={screening.events}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                now={now}
+                evolution={screening.evolution.byEventId}
+              />
             )}
           </section>
 
           <aside className="hidden lg:block min-h-0">
-            <EventDetailPanel event={selectedEvent} onClose={() => setSelectedId(null)} />
+            <EventDetailPanel event={selectedEvent} onClose={() => setSelectedId(null)} evolution={selectedEvolution} />
           </aside>
         </div>
       </main>
@@ -199,7 +213,11 @@ export default function Home() {
             className="relative max-h-[85dvh] overflow-hidden border-t animate-rise-in rounded-t-xl"
             style={{ background: "var(--bg)", borderColor: "var(--border)" }}
           >
-            <EventDetailPanel event={selectedEvent} onClose={() => setMobileDetailOpen(false)} />
+            <EventDetailPanel
+              event={selectedEvent}
+              onClose={() => setMobileDetailOpen(false)}
+              evolution={selectedEvolution}
+            />
           </div>
         </div>
       )}

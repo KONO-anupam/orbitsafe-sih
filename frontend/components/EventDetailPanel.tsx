@@ -2,18 +2,94 @@
 
   import { useCallback, useEffect, useMemo, useState } from "react";
   import { ConjunctionEvent } from "@/lib/types";
+  import { EventEvolution } from "@/lib/eventEvolution";
   import { confidenceColor, formatUTC, severityColor, severityGlow } from "@/lib/format";
   import ScopeTrace from "./ScopeTrace";
   import OrbitSchematic from "./OrbitSchematic";
   import Globe3D from "./Globe3D";
   import { useConjunctionTrajectories } from "@/lib/useConjuctionTrajectories";
 
+  function evolutionMeta(status: EventEvolution["status"]): { label: string; color: string } {
+    switch (status) {
+      case "new":
+        return { label: "new", color: "var(--text-secondary)" };
+      case "worsening":
+        return { label: "worsening", color: "var(--critical)" };
+      case "improving":
+        return { label: "improving", color: "var(--safe)" };
+      case "stable":
+        return { label: "stable", color: "var(--text-tertiary)" };
+    }
+  }
+
+  function EvolutionCard({ evolution }: { evolution: EventEvolution }) {
+    const meta = evolutionMeta(evolution.status);
+    const scoreDeltaLabel = evolution.scoreDelta > 0 ? `+${evolution.scoreDelta}` : `${evolution.scoreDelta}`;
+
+    return (
+      <div className="panel-card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>
+            change since last run
+          </span>
+          <span
+            className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 border rounded-md"
+            style={{ color: meta.color, borderColor: meta.color + "55" }}
+          >
+            {meta.label}
+          </span>
+        </div>
+
+        {evolution.status === "new" && (
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            First appeared in this screening run — no prior data for this pair.
+          </p>
+        )}
+
+        {evolution.status === "stable" && (
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            No material change in priority since the last run.
+          </p>
+        )}
+
+        {(evolution.status === "worsening" || evolution.status === "improving") && evolution.previous && (
+          <>
+            <div className="flex items-center justify-between text-sm mb-3">
+              <span style={{ color: "var(--text-secondary)" }}>Priority</span>
+              <span className="font-mono tabular">
+                {evolution.previous.risk_score} → {evolution.current.risk_score}
+                <span style={{ color: meta.color }}> ({scoreDeltaLabel})</span>
+              </span>
+            </div>
+            <dl className="space-y-1.5">
+              {evolution.deltas.map((d) => (
+                <div key={d.label} className="flex items-center justify-between text-sm">
+                  <dt style={{ color: "var(--text-secondary)" }}>{d.label}</dt>
+                  <dd className="font-mono tabular text-xs">
+                    {d.from} → {d.to}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {evolution.primaryDriver && (
+              <p className="text-[11px] mt-3" style={{ color: "var(--text-tertiary)" }}>
+                Primary driver: {evolution.primaryDriver.label.toLowerCase()}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   export default function EventDetailPanel({
     event,
     onClose,
+    evolution,
   }: {
     event: ConjunctionEvent | null;
     onClose: () => void;
+    evolution?: EventEvolution;
   }) {
     const [view, setView] = useState<"3d" | "2d">("3d");
     const [globeUnavailable, setGlobeUnavailable] = useState(false);
@@ -126,6 +202,8 @@
             ×
           </button>
         </div>
+
+        {evolution && <EvolutionCard evolution={evolution} />}
 
         {/* orbit geometry card: 3D globe with 2D fallback */}
         <div className="panel-card p-5">

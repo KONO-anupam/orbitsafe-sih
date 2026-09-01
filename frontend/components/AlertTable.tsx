@@ -2,20 +2,37 @@
 
 import { useMemo, useState } from "react";
 import { ConjunctionEvent } from "@/lib/types";
+import { EventEvolution, EvolutionStatus } from "@/lib/eventEvolution";
 import { confidenceColor, formatUTC, severityColor, severityGlow, timeUntil } from "@/lib/format";
 
 type SortKey = "risk_score" | "miss_distance_km" | "tca" | "relative_velocity_km_s";
+
+function trendBadge(status: EvolutionStatus | undefined): { label: string; color: string } | null {
+  switch (status) {
+    case "new":
+      return { label: "NEW", color: "var(--text-secondary)" };
+    case "worsening":
+      return { label: "WORSENING", color: "var(--critical)" };
+    case "improving":
+      return { label: "IMPROVING", color: "var(--safe)" };
+    default:
+      // "stable" or no prior run to compare against — nothing worth flagging.
+      return null;
+  }
+}
 
 export default function AlertTable({
   events,
   selectedId,
   onSelect,
   now,
+  evolution,
 }: {
   events: ConjunctionEvent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   now: Date;
+  evolution: Map<string, EventEvolution>;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("risk_score");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -39,7 +56,8 @@ export default function AlertTable({
     }
   }
 
-  const columns: { key: SortKey | "objects" | "confidence" | "status"; label: string }[] = [
+  const columns: { key: SortKey | "objects" | "confidence" | "trend"; label: string }[] = [
+    { key: "trend", label: "Trend" },
     { key: "objects", label: "Objects" },
     { key: "tca", label: "TCA" },
     { key: "miss_distance_km", label: "Miss dist." },
@@ -86,58 +104,114 @@ export default function AlertTable({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((e) => (
-            <tr
+          {sorted.map((e) => {
+            const badge = trendBadge(evolution.get(e.event_id)?.status);
+            return (
+              <tr
+                key={e.event_id}
+                onClick={() => onSelect(e.event_id)}
+                className="border-b cursor-pointer transition-colors"
+                style={{
+                  borderColor: "var(--border)",
+                  background: selectedId === e.event_id ? "var(--surface-2)" : "transparent",
+                  borderLeft: `3px solid ${selectedId === e.event_id ? "var(--accent)" : "transparent"}`,
+                }}
+              >
+                <td className="px-4 py-3">
+                  {badge ? (
+                    <span
+                      className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 border rounded-md"
+                      style={{ color: badge.color, borderColor: badge.color + "55" }}
+                    >
+                      {badge.label}
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                      —
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-1.5 h-6 shrink-0 rounded-full"
+                      style={{ background: severityColor(e.severity) }}
+                      aria-hidden
+                    />
+                    <div>
+                      <div className="text-sm font-medium">{e.primary.name}</div>
+                      <div className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                        vs {e.secondary.name}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 font-mono text-xs tabular" style={{ color: "var(--text-secondary)" }}>
+                  {timeUntil(e.tca, now)}
+                  <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                    {formatUTC(e.tca).slice(5, 16)}
+                  </div>
+                </td>
+                <td className="px-4 py-3 font-mono text-sm tabular">{e.miss_distance_km.toFixed(1)} km</td>
+                <td className="px-4 py-3 font-mono text-sm tabular" style={{ color: "var(--text-secondary)" }}>
+                  {e.relative_velocity_km_s.toFixed(1)} km/s
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className="font-mono text-[11px] px-1.5 py-0.5 border rounded-md"
+                    style={{ color: confidenceColor(e.confidence), borderColor: confidenceColor(e.confidence) + "55" }}
+                  >
+                    {e.confidence}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="font-display font-semibold tabular text-sm"
+                      style={{ color: severityColor(e.severity) }}
+                    >
+                      {e.risk_score}
+                    </div>
+                    <span
+                      className="font-mono text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md"
+                      style={{ color: severityColor(e.severity), background: severityGlow(e.severity) }}
+                    >
+                      {e.severity}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* mobile cards */}
+      <div className="md:hidden divide-y" style={{ borderColor: "var(--border)" }}>
+        {sorted.map((e) => {
+          const badge = trendBadge(evolution.get(e.event_id)?.status);
+          return (
+            <button
               key={e.event_id}
               onClick={() => onSelect(e.event_id)}
-              className="border-b cursor-pointer transition-colors"
+              className="w-full text-left px-4 py-3.5 flex flex-col gap-2"
               style={{
-                borderColor: "var(--border)",
                 background: selectedId === e.event_id ? "var(--surface-2)" : "transparent",
+                borderBottom: "1px solid var(--border)",
                 borderLeft: `3px solid ${selectedId === e.event_id ? "var(--accent)" : "transparent"}`,
               }}
             >
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-1.5 h-6 shrink-0 rounded-full"
-                    style={{ background: severityColor(e.severity) }}
-                    aria-hidden
-                  />
-                  <div>
-                    <div className="text-sm font-medium">{e.primary.name}</div>
-                    <div className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      vs {e.secondary.name}
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td className="px-4 py-3 font-mono text-xs tabular" style={{ color: "var(--text-secondary)" }}>
-                {timeUntil(e.tca, now)}
-                <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                  {formatUTC(e.tca).slice(5, 16)}
-                </div>
-              </td>
-              <td className="px-4 py-3 font-mono text-sm tabular">{e.miss_distance_km.toFixed(1)} km</td>
-              <td className="px-4 py-3 font-mono text-sm tabular" style={{ color: "var(--text-secondary)" }}>
-                {e.relative_velocity_km_s.toFixed(1)} km/s
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className="font-mono text-[11px] px-1.5 py-0.5 border rounded-md"
-                  style={{ color: confidenceColor(e.confidence), borderColor: confidenceColor(e.confidence) + "55" }}
-                >
-                  {e.confidence}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="font-display font-semibold tabular text-sm"
-                    style={{ color: severityColor(e.severity) }}
-                  >
-                    {e.risk_score}
-                  </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">{e.primary.name}</span>
+                <div className="flex items-center gap-1.5">
+                  {badge && (
+                    <span
+                      className="font-mono text-[9px] uppercase tracking-[0.1em] px-1.5 py-0.5 border rounded-md"
+                      style={{ color: badge.color, borderColor: badge.color + "55" }}
+                    >
+                      {badge.label}
+                    </span>
+                  )}
                   <span
                     className="font-mono text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md"
                     style={{ color: severityColor(e.severity), background: severityGlow(e.severity) }}
@@ -145,48 +219,22 @@ export default function AlertTable({
                     {e.severity}
                   </span>
                 </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* mobile cards */}
-      <div className="md:hidden divide-y" style={{ borderColor: "var(--border)" }}>
-        {sorted.map((e) => (
-          <button
-            key={e.event_id}
-            onClick={() => onSelect(e.event_id)}
-            className="w-full text-left px-4 py-3.5 flex flex-col gap-2"
-            style={{
-              background: selectedId === e.event_id ? "var(--surface-2)" : "transparent",
-              borderBottom: "1px solid var(--border)",
-              borderLeft: `3px solid ${selectedId === e.event_id ? "var(--accent)" : "transparent"}`,
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{e.primary.name}</span>
-              <span
-                className="font-mono text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-md"
-                style={{ color: severityColor(e.severity), background: severityGlow(e.severity) }}
-              >
-                {e.severity}
-              </span>
-            </div>
-            <div className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-              vs {e.secondary.name}
-            </div>
-            <div className="flex items-center justify-between font-mono text-xs tabular" style={{ color: "var(--text-secondary)" }}>
-              <span>{e.miss_distance_km.toFixed(1)} km · {e.relative_velocity_km_s.toFixed(1)} km/s</span>
-              <span style={{ color: severityColor(e.severity) }} className="font-display font-semibold">
-                {e.risk_score}
-              </span>
-            </div>
-            <div className="font-mono text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-              TCA in {timeUntil(e.tca, now)}
-            </div>
-          </button>
-        ))}
+              </div>
+              <div className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                vs {e.secondary.name}
+              </div>
+              <div className="flex items-center justify-between font-mono text-xs tabular" style={{ color: "var(--text-secondary)" }}>
+                <span>{e.miss_distance_km.toFixed(1)} km · {e.relative_velocity_km_s.toFixed(1)} km/s</span>
+                <span style={{ color: severityColor(e.severity) }} className="font-display font-semibold">
+                  {e.risk_score}
+                </span>
+              </div>
+              <div className="font-mono text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                TCA in {timeUntil(e.tca, now)}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
