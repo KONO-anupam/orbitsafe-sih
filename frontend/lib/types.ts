@@ -46,6 +46,10 @@ export interface ConjunctionEvent {
   next_step_reason?: string;
   mission_priority?: number;
   mission_breakdown?: { label: string; value: string }[];
+  robustness_stable?: boolean;
+  robustness_max_tca_diff_seconds?: number;
+  robustness_max_miss_distance_diff_km?: number;
+  robustness_checks?: { label: string; tca: string; miss_distance_km: string }[];
 }
 
 export interface OrbitalElements3D {

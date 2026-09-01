@@ -195,6 +195,10 @@ export interface CandidateConjunctionResponse {
   next_step_reason: string;
   mission_priority: number;
   mission_breakdown: Record<string, string>[];
+  robustness_stable: boolean;
+  robustness_max_tca_diff_seconds: number;
+  robustness_max_miss_distance_diff_km: number;
+  robustness_checks: Record<string, string>[];
 }
 
 export interface ScreeningResponse {

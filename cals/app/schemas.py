@@ -130,6 +130,10 @@ class CandidateConjunctionResponse(BaseModel):
     next_step_reason: str
     mission_priority: int = Field(ge=0, le=100)
     mission_breakdown: list[dict[str, str]]
+    robustness_stable: bool
+    robustness_max_tca_diff_seconds: float
+    robustness_max_miss_distance_diff_km: float
+    robustness_checks: list[dict[str, str]]
 
 
 class ScreeningResponse(BaseModel):

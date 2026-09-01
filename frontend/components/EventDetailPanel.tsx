@@ -58,6 +58,44 @@ function NextStepCard({ event }: { event: ConjunctionEvent }) {
   );
 }
 
+function RobustnessCard({ event }: { event: ConjunctionEvent }) {
+  if (event.robustness_stable === undefined) return null;
+  const color = event.robustness_stable ? "var(--safe)" : "var(--medium)";
+  const glow = event.robustness_stable ? "var(--safe-glow)" : "var(--medium-glow)";
+  return (
+    <div className="panel-card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>
+          robustness
+        </span>
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-md"
+          style={{ color, background: glow }}
+        >
+          {event.robustness_stable ? "stable" : "sensitive"}
+        </span>
+      </div>
+      <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+        {event.robustness_stable
+          ? "Result is stable under alternate numerical step sizes."
+          : "Result shifts under alternate step sizes — treat as less certain."}
+      </p>
+      {event.robustness_checks && (
+        <dl className="space-y-1.5">
+          {event.robustness_checks.map((c, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px]">
+              <dt style={{ color: "var(--text-tertiary)" }}>{c.label}</dt>
+              <dd className="font-mono tabular">
+                {c.miss_distance_km === "no result" ? "no result" : `${c.miss_distance_km} km`}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
   function EvolutionCard({ evolution }: { evolution: EventEvolution }) {
     const meta = evolutionMeta(evolution.status);
     const scoreDeltaLabel = evolution.scoreDelta > 0 ? `+${evolution.scoreDelta}` : `${evolution.scoreDelta}`;
@@ -239,6 +277,7 @@ function NextStepCard({ event }: { event: ConjunctionEvent }) {
           </button>
         </div>
        <NextStepCard event={event} />
+        <RobustnessCard event={event} />
         {evolution && <EvolutionCard evolution={evolution} />}
 
         {/* orbit geometry card: 3D globe with 2D fallback */}

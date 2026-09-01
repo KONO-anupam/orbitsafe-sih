@@ -60,6 +60,10 @@ function toConjunctionEvent(candidate: CandidateConjunctionResponse): Conjunctio
     next_step_reason: candidate.next_step_reason,
     mission_priority: candidate.mission_priority,
     mission_breakdown: normalizeBreakdown(candidate.mission_breakdown),
+    robustness_stable: candidate.robustness_stable,
+    robustness_max_tca_diff_seconds: candidate.robustness_max_tca_diff_seconds,
+    robustness_max_miss_distance_diff_km: candidate.robustness_max_miss_distance_diff_km,
+    robustness_checks: candidate.robustness_checks as ConjunctionEvent["robustness_checks"],
   };
 }
 

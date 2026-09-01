@@ -22,6 +22,7 @@ from app.config import MAX_ELEMENT_AGE_DAYS, MAX_FUTURE_ELEMENT_HOURS
 from app.models import OrbitalElementSet, OrbitalObject
 from app.services.sgp4_adapter import satrec_from_element_set
 from app.services.scoring import MissionProfile, score_candidate
+from app.services.robustness import RobustnessResult, assess_robustness
 from app.services.validation import utc_datetime
 
 
@@ -228,11 +229,38 @@ def _is_co_propagating(refined: tuple[datetime, float, float]) -> bool:
     return distance <= CO_PROPAGATING_DISTANCE_KM and speed <= CO_PROPAGATING_SPEED_KM_S
 
 
+def _assess_candidate_robustness(
+    left: ScreenedObject,
+    right: ScreenedObject,
+    center: datetime,
+    refined: tuple[datetime, float, float],
+    config: ScreeningConfig,
+    analysis_time: datetime,
+    end_time: datetime,
+) -> RobustnessResult:
+    """Re-refines the same local bracket at half/double the coarse step.
+
+    Cheap relative to the broad-phase scan — only runs on candidates that
+    already passed the full screen, reusing the same bracket center with a
+    different half-window size.
+    """
+    baseline_tca, baseline_miss_km, _ = refined
+    perturbed_steps = sorted({max(30, config.coarse_step_seconds // 2), min(600, config.coarse_step_seconds * 2)})
+    perturbed: list[tuple[int, tuple[datetime, float, float] | None]] = []
+    for step in perturbed_steps:
+        if step == config.coarse_step_seconds:
+            continue
+        result = _refine_tca(left, right, center, step, analysis_time, end_time)
+        perturbed.append((step, result))
+    return assess_robustness(baseline_tca=baseline_tca, baseline_miss_km=baseline_miss_km, perturbed=perturbed)
+
+
 def _candidate_response(
     left: ScreenedObject,
     right: ScreenedObject,
     refined: tuple[datetime, float, float],
     config: ScreeningConfig,
+    robustness: RobustnessResult,
 ) -> dict:
     tca, miss_distance, relative_velocity = refined
     primary, secondary = sorted((left, right), key=lambda item: item.object.norad_cat_id)
@@ -282,6 +310,10 @@ def _candidate_response(
         "next_step_reason": risk.next_step_reason,
         "mission_priority": risk.mission_priority,
         "mission_breakdown": risk.mission_breakdown,
+        "robustness_stable": robustness.stable,
+        "robustness_max_tca_diff_seconds": robustness.max_tca_diff_seconds,
+        "robustness_max_miss_distance_diff_km": robustness.max_miss_distance_diff_km,
+        "robustness_checks": robustness.checks,
     }
 
 
@@ -352,7 +384,18 @@ def screen_catalog(db: Session, config: ScreeningConfig) -> dict:
                 and not _is_co_propagating(refined)
                 and refined[1] <= config.screening_threshold_km
             ):
-                candidates.append(_candidate_response(object_by_id[pair[0]], object_by_id[pair[1]], refined, config))
+                robustness = _assess_candidate_robustness(
+                    object_by_id[pair[0]],
+                    object_by_id[pair[1]],
+                    best.timestamp,
+                    refined,
+                    config,
+                    analysis_time,
+                    end_time,
+                )
+                candidates.append(
+                    _candidate_response(object_by_id[pair[0]], object_by_id[pair[1]], refined, config, robustness)
+                )
 
     candidates.sort(key=lambda candidate: (candidate["tca"], candidate["miss_distance_km"]))
     return {

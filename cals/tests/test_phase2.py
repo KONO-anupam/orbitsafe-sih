@@ -131,6 +131,10 @@ def test_screening_generates_refined_nominal_candidate(db):
     assert candidate["next_step"] in {"MONITOR", "INVESTIGATE", "REFRESH_DATA"}
     assert isinstance(candidate["next_step_reason"], str) and candidate["next_step_reason"]
     assert candidate["score_breakdown"]
+    assert "robustness_stable" in candidate
+    assert "robustness_max_tca_diff_seconds" in candidate
+    assert "robustness_max_miss_distance_diff_km" in candidate
+    assert "robustness_checks" in candidate
 
 
 def test_risk_score_is_explainable_and_penalizes_stale_data():
