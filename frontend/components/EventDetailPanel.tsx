@@ -1,13 +1,15 @@
   "use client";
 
-  import { useCallback, useEffect, useMemo, useState } from "react";
-  import { ConjunctionEvent } from "@/lib/types";
-  import { EventEvolution } from "@/lib/eventEvolution";
-  import { confidenceColor, formatUTC, severityColor, severityGlow } from "@/lib/format";
-  import ScopeTrace from "./ScopeTrace";
-  import OrbitSchematic from "./OrbitSchematic";
-  import Globe3D from "./Globe3D";
-  import { useConjunctionTrajectories } from "@/lib/useConjuctionTrajectories";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ConjunctionEvent } from "@/lib/types";
+import { EventEvolution } from "@/lib/eventEvolution";
+import { confidenceColor, formatUTC, severityColor, severityGlow } from "@/lib/format";
+import { downloadReport } from "@/lib/exportReport";
+import { useConjunctionTrajectories } from "@/lib/useConjuctionTrajectories";
+import ScopeTrace from "./ScopeTrace";
+import OrbitSchematic from "./OrbitSchematic";
+import Globe3D from "./Globe3D";
+import ManeuverPanel from "./ManeuverPanel";
 
   function evolutionMeta(status: EventEvolution["status"]): { label: string; color: string } {
     switch (status) {
@@ -267,18 +269,30 @@ function RobustnessCard({ event }: { event: ConjunctionEvent }) {
               vs {event.secondary.name} · {event.secondary.norad_id}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 w-8 h-8 flex items-center justify-center border rounded-md font-mono text-sm transition-colors"
-            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-            aria-label="Close event detail"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => downloadReport(event, evolution)}
+              className="w-8 h-8 flex items-center justify-center border rounded-md font-mono text-xs transition-colors"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+              aria-label="Export investigation report"
+              title="Export investigation report"
+            >
+              ↓
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center border rounded-md font-mono text-sm transition-colors"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+              aria-label="Close event detail"
+            >
+              ×
+            </button>
+          </div>
         </div>
-       <NextStepCard event={event} />
+        <NextStepCard event={event} />
         <RobustnessCard event={event} />
         {evolution && <EvolutionCard evolution={evolution} />}
+        <ManeuverPanel event={event} />
 
         {/* orbit geometry card: 3D globe with 2D fallback */}
         <div className="panel-card p-5">

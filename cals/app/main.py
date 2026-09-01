@@ -16,6 +16,8 @@ from app.models import OrbitalElementSet, OrbitalObject
 from app.schemas import (
     CandidateConjunctionResponse,
     ElementResponse,
+    ManeuverRequest,
+    ManeuverResponse,
     ObjectPage,
     ObjectResponse,
     PositionRequest,
@@ -25,6 +27,7 @@ from app.schemas import (
     TrajectoryRequest,
     TrajectoryResponse,
 )
+from app.services.maneuver import evaluate_maneuver
 from app.services.propagation import (
     ElementEpochPolicyError,
     ObjectNotFoundError,
@@ -205,3 +208,37 @@ def screen(request: ScreeningRequest, db: Session = Depends(get_db)) -> Screenin
     )
     _SCREEN_CACHE[cache_key] = (time.monotonic(), response.model_dump())
     return response
+
+
+@app.post("/api/v1/whatif/maneuver", response_model=ManeuverResponse, tags=["screening"])
+def whatif_maneuver(request: ManeuverRequest, db: Session = Depends(get_db)) -> ManeuverResponse:
+    """Return a what-if assessment after an instantaneous RTN delta-v burn."""
+    try:
+        outcome = evaluate_maneuver(
+            db,
+            primary_norad_cat_id=request.primary_norad_cat_id,
+            secondary_norad_cat_id=request.secondary_norad_cat_id,
+            burn_time=request.burn_time,
+            radial_km_s=request.radial_m_s / 1000.0,
+            transverse_km_s=request.transverse_m_s / 1000.0,
+            normal_km_s=request.normal_m_s / 1000.0,
+            search_start=request.search_start,
+            search_end=request.search_end,
+            step_seconds=request.step_seconds,
+            screening_threshold_km=request.screening_threshold_km,
+            baseline_miss_distance_km=request.baseline_miss_distance_km,
+        )
+        return ManeuverResponse(
+            burn_time=outcome.burn_time,
+            new_tca=outcome.new_tca,
+            new_miss_distance_km=outcome.new_miss_distance_km,
+            new_relative_velocity_km_s=outcome.new_relative_velocity_km_s,
+            baseline_miss_distance_km=outcome.baseline_miss_distance_km,
+            cleared_threshold=outcome.cleared_threshold,
+            sample_count=outcome.sample_count,
+            notes=outcome.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - safety net; keep surface explicit.
+        raise HTTPException(status_code=500, detail=f"Maneuver evaluation failed: {exc}") from exc

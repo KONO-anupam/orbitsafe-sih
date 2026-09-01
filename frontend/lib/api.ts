@@ -214,3 +214,44 @@ export function screenConjunctions(params: ScreeningParams = {}): Promise<Screen
     body: JSON.stringify(params),
   });
 }
+
+// --- what-if maneuver ---
+//
+// Mirrors app/schemas.py ManeuverRequest/ManeuverResponse. Applies an
+// instantaneous RTN delta-v to the primary object at burn_time and
+// re-evaluates its closest approach to the secondary object. The backend
+// propagates the post-burn primary with unperturbed two-body (Keplerian)
+// mechanics, not SGP4 — see the `notes` field on every response, which
+// states this and any other applicable caveats explicitly.
+
+export interface ManeuverRequest {
+  primary_norad_cat_id: number;
+  secondary_norad_cat_id: number;
+  burn_time: string; // ISO-8601
+  radial_m_s?: number;
+  transverse_m_s?: number;
+  normal_m_s?: number;
+  search_start: string; // ISO-8601
+  search_end: string; // ISO-8601
+  step_seconds?: number;
+  screening_threshold_km?: number;
+  baseline_miss_distance_km: number;
+}
+
+export interface ManeuverResponse {
+  burn_time: string;
+  new_tca: string | null;
+  new_miss_distance_km: number | null;
+  new_relative_velocity_km_s: number | null;
+  baseline_miss_distance_km: number;
+  cleared_threshold: boolean | null;
+  sample_count: number;
+  notes: string[];
+}
+
+export function evaluateManeuver(params: ManeuverRequest): Promise<ManeuverResponse> {
+  return request("/api/v1/whatif/maneuver", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}

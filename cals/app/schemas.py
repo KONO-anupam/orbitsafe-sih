@@ -141,3 +141,32 @@ class ScreeningResponse(BaseModel):
     eligible_objects: int
     excluded_objects: int
     candidates: list[CandidateConjunctionResponse]
+
+
+class ManeuverRequest(BaseModel):
+    """Evaluate a hypothetical burn that changes the primary object's velocity."""
+
+    primary_norad_cat_id: int = Field(gt=0)
+    secondary_norad_cat_id: int = Field(gt=0)
+    burn_time: datetime
+    radial_m_s: float = Field(default=0.0)
+    transverse_m_s: float = Field(default=0.0)
+    normal_m_s: float = Field(default=0.0)
+    search_start: datetime
+    search_end: datetime
+    step_seconds: int = Field(default=60, gt=0, le=86400)
+    screening_threshold_km: float = Field(default=50, gt=0, le=1000)
+    baseline_miss_distance_km: float = Field(ge=0)
+
+
+class ManeuverResponse(BaseModel):
+    """What-if output for a delta-v burn; notes explicitly state model caveats."""
+
+    burn_time: datetime
+    new_tca: datetime | None
+    new_miss_distance_km: float | None
+    new_relative_velocity_km_s: float | None
+    baseline_miss_distance_km: float
+    cleared_threshold: bool | None
+    sample_count: int
+    notes: list[str]
