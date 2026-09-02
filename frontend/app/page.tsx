@@ -139,21 +139,7 @@ export default function Home() {
           />
         </div>
 
-        <AssetExposurePanel
-          events={screening.events}
-          evolution={screening.evolution.byEventId}
-          now={now}
-          onSelectEvent={handleSelect}
-        />
-
-        <SituationsPanel
-          events={screening.events}
-          evolution={screening.evolution.byEventId}
-          now={now}
-          onSelectEvent={handleSelect}
-        />
-
-        <div className="flex-1 grid lg:grid-cols-[1fr_400px] gap-6 min-h-0">
+        <div className="flex-1 grid lg:grid-cols-[minmax(0,1fr)_400px] gap-6 min-h-0 items-start">
           <section className="panel-card overflow-hidden min-w-0 flex flex-col">
             <div
               className="px-5 py-4 border-b flex items-center justify-between shrink-0"
@@ -222,8 +208,24 @@ export default function Home() {
             )}
           </section>
 
-          <aside className="hidden lg:block min-h-0">
-            <EventDetailPanel event={selectedEvent} onClose={() => setSelectedId(null)} evolution={selectedEvolution} />
+          <aside className="min-w-0 flex flex-col gap-6">
+            <AssetExposurePanel
+              events={screening.events}
+              evolution={screening.evolution.byEventId}
+              now={now}
+              onSelectEvent={handleSelect}
+            />
+
+            <SituationsPanel
+              events={screening.events}
+              evolution={screening.evolution.byEventId}
+              now={now}
+              onSelectEvent={handleSelect}
+            />
+
+            <div className="hidden lg:block min-h-0">
+              <EventDetailPanel event={selectedEvent} onClose={() => setSelectedId(null)} evolution={selectedEvolution} />
+            </div>
           </aside>
         </div>
       </main>

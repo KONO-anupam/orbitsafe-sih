@@ -31,7 +31,7 @@ export default function MissionBar() {
             className="hidden sm:inline text-[11px] uppercase tracking-[0.14em] px-2 py-0.5 border rounded-md font-mono"
             style={{ color: "var(--text-tertiary)", borderColor: "var(--border)" }}
           >
-            screening / not operational
+            screening
           </span>
         </div>
         <div className="font-mono text-xs sm:text-sm tabular" style={{ color: "var(--text-secondary)" }}>
