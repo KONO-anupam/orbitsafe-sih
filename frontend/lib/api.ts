@@ -255,3 +255,54 @@ export function evaluateManeuver(params: ManeuverRequest): Promise<ManeuverRespo
     body: JSON.stringify(params),
   });
 }
+
+// --- cascade maneuver screening ---
+
+export interface ManeuverCandidateResponse {
+  secondary: ScreeningObjectRef;
+  tca: string;
+  miss_distance_km: number;
+  relative_velocity_km_s: number;
+  risk_score: number;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+}
+
+export interface ManeuverComparisonRow {
+  secondary: ScreeningObjectRef;
+  status: "new" | "resolved" | "worsened" | "improved" | "unchanged";
+  before_miss_distance_km: number | null;
+  after_miss_distance_km: number | null;
+  before_risk_score: number | null;
+  after_risk_score: number | null;
+}
+
+export interface ManeuverSimulationResponse {
+  target: ScreeningObjectRef;
+  maneuver_time: string;
+  delta_v_m_s: number;
+  analysis_time: string;
+  forecast_horizon_hours: number;
+  baseline_events: ManeuverCandidateResponse[];
+  post_maneuver_events: ManeuverCandidateResponse[];
+  comparison: ManeuverComparisonRow[];
+  limitations: string[];
+}
+
+export interface ManeuverSimulationParams {
+  norad_cat_id: number;
+  delta_v_m_s: number;
+  maneuver_lead_hours?: number;
+  analysis_time?: string;
+  forecast_horizon_hours?: number;
+  screening_threshold_km?: number;
+  sample_step_seconds?: number;
+  object_limit?: number;
+}
+
+export function simulateManeuver(params: ManeuverSimulationParams): Promise<ManeuverSimulationResponse> {
+  return request("/api/v1/maneuver/simulate?confirm=true", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}

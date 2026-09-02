@@ -143,6 +143,50 @@ class ScreeningResponse(BaseModel):
     candidates: list[CandidateConjunctionResponse]
 
 
+class CascadeManeuverRequest(BaseModel):
+    """Controls for a hypothetical along-track maneuver what-if."""
+
+    norad_cat_id: int = Field(gt=0)
+    delta_v_m_s: float = Field(ge=-2000, le=2000)
+    maneuver_lead_hours: float = Field(default=6, gt=0, le=71)
+    analysis_time: datetime | None = None
+    forecast_horizon_hours: float = Field(default=24, gt=0, le=72)
+    screening_threshold_km: float = Field(default=50, gt=0, le=1000)
+    sample_step_seconds: int = Field(default=120, ge=60, le=300)
+    object_limit: int = Field(default=150, ge=2, le=500)
+
+
+class CascadeManeuverCandidateResponse(BaseModel):
+    secondary: ScreeningObjectRef
+    tca: datetime
+    miss_distance_km: float
+    relative_velocity_km_s: float
+    risk_score: int = Field(ge=0, le=100)
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    confidence: Literal["HIGH", "MEDIUM", "LOW"]
+
+
+class CascadeManeuverComparisonRow(BaseModel):
+    secondary: ScreeningObjectRef
+    status: Literal["new", "resolved", "worsened", "improved", "unchanged"]
+    before_miss_distance_km: float | None
+    after_miss_distance_km: float | None
+    before_risk_score: int | None
+    after_risk_score: int | None
+
+
+class CascadeManeuverSimulationResponse(BaseModel):
+    target: ScreeningObjectRef
+    maneuver_time: datetime
+    delta_v_m_s: float
+    analysis_time: datetime
+    forecast_horizon_hours: float
+    baseline_events: list[CascadeManeuverCandidateResponse]
+    post_maneuver_events: list[CascadeManeuverCandidateResponse]
+    comparison: list[CascadeManeuverComparisonRow]
+    limitations: list[str]
+
+
 class ManeuverRequest(BaseModel):
     """Evaluate a hypothetical burn that changes the primary object's velocity."""
 

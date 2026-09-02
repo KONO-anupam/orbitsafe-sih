@@ -27,6 +27,18 @@ from app.services.keplerian import (
     state_to_elements,
 )
 from app.services.propagation import propagate_element, select_element_set
+from app.services.screening import (
+    MAX_RELATIVE_SPEED_KM_S,
+    MU_EARTH_KM3_S2,
+    ScreeningConfig,
+    _distance,
+    _object_type,
+    _relative_speed,
+    _select_screened_objects,
+    _state,
+    screen_catalog,
+)
+from app.services.scoring import score_candidate
 from app.services.validation import utc_datetime
 
 _STATIC_NOTES = [
@@ -39,8 +51,280 @@ _STATIC_NOTES = [
 ]
 
 
+def _vadd(a: list[float], b: list[float]) -> list[float]:
+    return [x + y for x, y in zip(a, b)]
+
+
+def _vscale(a: list[float], s: float) -> list[float]:
+    return [x * s for x in a]
+
+
+def _vnorm(a: list[float]) -> float:
+    return math.sqrt(sum(x * x for x in a))
+
+
+def _two_body_accel(position: list[float]) -> list[float]:
+    r = _vnorm(position)
+    return _vscale(position, -MU_EARTH_KM3_S2 / (r ** 3))
+
+
+def _rk4_step(position: list[float], velocity: list[float], dt: float) -> tuple[list[float], list[float]]:
+    def deriv(pos: list[float], vel: list[float]) -> tuple[list[float], list[float]]:
+        return vel, _two_body_accel(pos)
+
+    k1p, k1v = deriv(position, velocity)
+    k2p, k2v = deriv(_vadd(position, _vscale(k1p, dt / 2)), _vadd(velocity, _vscale(k1v, dt / 2)))
+    k3p, k3v = deriv(_vadd(position, _vscale(k2p, dt / 2)), _vadd(velocity, _vscale(k2v, dt / 2)))
+    k4p, k4v = deriv(_vadd(position, _vscale(k3p, dt)), _vadd(velocity, _vscale(k3v, dt)))
+
+    new_position = _vadd(
+        position,
+        _vscale(_vadd(_vadd(k1p, _vscale(k2p, 2)), _vadd(_vscale(k3p, 2), k4p)), dt / 6),
+    )
+    new_velocity = _vadd(
+        velocity,
+        _vscale(_vadd(_vadd(k1v, _vscale(k2v, 2)), _vadd(_vscale(k3v, 2), k4v)), dt / 6),
+    )
+    return new_position, new_velocity
+
+
+def _propagate_maneuvered(
+    position0: list[float],
+    velocity0: list[float],
+    start_time: datetime,
+    end_time: datetime,
+    step_seconds: int,
+) -> list[tuple[datetime, list[float], list[float]]]:
+    trace: list[tuple[datetime, list[float], list[float]]] = [(start_time, position0, velocity0)]
+    position, velocity = position0, velocity0
+    current = start_time
+    integration_step = min(30.0, float(step_seconds))
+    while current < end_time:
+        next_sample_time = min(current + timedelta(seconds=step_seconds), end_time)
+        remaining = (next_sample_time - current).total_seconds()
+        while remaining > 1e-6:
+            dt = min(integration_step, remaining)
+            position, velocity = _rk4_step(position, velocity, dt)
+            remaining -= dt
+        current = next_sample_time
+        trace.append((current, position, velocity))
+    return trace
+
+
+def _parabolic_minimum(
+    t0: datetime, d0: float, t1: datetime, d1: float, t2: datetime, d2: float, step_seconds: float
+) -> tuple[datetime, float]:
+    denom = d0 - 2 * d1 + d2
+    if abs(denom) < 1e-9:
+        return t1, d1
+    delta = max(-1.0, min(1.0, 0.5 * (d0 - d2) / denom))
+    t_min = t1 + timedelta(seconds=delta * step_seconds)
+    return t_min, max(0.0, d1 - 0.25 * (d0 - d2) * delta)
+
+
+def simulate_maneuver(db: Session, config: ManeuverConfig) -> dict:
+    analysis_time = utc_datetime(config.analysis_time)
+    end_time = analysis_time + timedelta(hours=config.forecast_horizon_hours)
+    maneuver_time = analysis_time + timedelta(hours=config.maneuver_lead_hours)
+    if maneuver_time >= end_time:
+        maneuver_time = end_time - timedelta(seconds=config.sample_step_seconds)
+
+    screening_config = ScreeningConfig(
+        analysis_time=analysis_time,
+        forecast_horizon_hours=config.forecast_horizon_hours,
+        screening_threshold_km=config.screening_threshold_km,
+        coarse_step_seconds=config.sample_step_seconds,
+        object_limit=config.object_limit,
+    )
+    objects, _excluded = _select_screened_objects(db, screening_config)
+    target = next((item for item in objects if item.object.norad_cat_id == config.norad_cat_id), None)
+    if target is None:
+        raise ManeuverTargetNotFoundError(
+            f"NORAD catalog ID {config.norad_cat_id} is not in the current eligible screening set"
+        )
+    others = [item for item in objects if item.object.norad_cat_id != config.norad_cat_id]
+    other_by_id = {item.object.norad_cat_id: item for item in others}
+
+    baseline_result = screen_catalog(db, screening_config)
+    target_id_str = str(config.norad_cat_id)
+    baseline_events: list[dict] = []
+    baseline_by_secondary: dict[int, dict] = {}
+    for candidate in baseline_result["candidates"]:
+        if candidate["primary"]["norad_id"] != target_id_str and candidate["secondary"]["norad_id"] != target_id_str:
+            continue
+        secondary_ref = candidate["secondary"] if candidate["primary"]["norad_id"] == target_id_str else candidate["primary"]
+        entry = {
+            "secondary": secondary_ref,
+            "tca": candidate["tca"],
+            "miss_distance_km": candidate["miss_distance_km"],
+            "relative_velocity_km_s": candidate["relative_velocity_km_s"],
+            "risk_score": candidate["risk_score"],
+            "severity": candidate["severity"],
+            "confidence": candidate["confidence"],
+        }
+        baseline_events.append(entry)
+        baseline_by_secondary[int(secondary_ref["norad_id"])] = entry
+
+    error_code, position_at_maneuver, velocity_at_maneuver = _state(target.satrec, maneuver_time)
+    if error_code != 0:
+        raise ManeuverTargetNotFoundError("Target's SGP4 state could not be evaluated at the maneuver time")
+    speed = _vnorm(velocity_at_maneuver)
+    if speed <= 0:
+        raise ManeuverTargetNotFoundError("Target has zero velocity at the maneuver time")
+    prograde_unit = _vscale(velocity_at_maneuver, 1 / speed)
+    new_velocity = _vadd(velocity_at_maneuver, _vscale(prograde_unit, config.delta_v_m_s / 1000.0))
+    maneuvered_trace = _propagate_maneuvered(position_at_maneuver, new_velocity, maneuver_time, end_time, config.sample_step_seconds)
+
+    gate_km = config.screening_threshold_km + (MAX_RELATIVE_SPEED_KM_S * config.sample_step_seconds / 2)
+    observations: dict[int, list[tuple[datetime, float, list[float], list[float]]]] = {}
+    for sample_time, target_position, target_velocity in maneuvered_trace:
+        for other in others:
+            other_error, other_position, other_velocity = _state(other.satrec, sample_time)
+            if other_error != 0:
+                continue
+            distance = _distance(target_position, other_position)
+            if distance <= gate_km:
+                observations.setdefault(other.object.norad_cat_id, []).append((sample_time, distance, target_velocity, other_velocity))
+
+    post_maneuver_events: list[dict] = []
+    post_by_secondary: dict[int, dict] = {}
+    target_type = _object_type(target.object.object_type)
+    for norad_id, samples in observations.items():
+        samples.sort(key=lambda item: item[0])
+        groups: list[list[tuple[datetime, float, list[float], list[float]]]] = []
+        for sample in samples:
+            if not groups or (sample[0] - groups[-1][-1][0]).total_seconds() > config.sample_step_seconds * 2:
+                groups.append([sample])
+            else:
+                groups[-1].append(sample)
+
+        other = other_by_id[norad_id]
+        for group in groups:
+            best_idx = min(range(len(group)), key=lambda i: group[i][1])
+            if 0 < best_idx < len(group) - 1:
+                t_min, d_min = _parabolic_minimum(
+                    group[best_idx - 1][0],
+                    group[best_idx - 1][1],
+                    group[best_idx][0],
+                    group[best_idx][1],
+                    group[best_idx + 1][0],
+                    group[best_idx + 1][1],
+                    config.sample_step_seconds,
+                )
+            else:
+                t_min, d_min = group[best_idx][0], group[best_idx][1]
+            if d_min > config.screening_threshold_km:
+                continue
+
+            rel_velocity = _relative_speed(group[best_idx][2], group[best_idx][3])
+            oldest_epoch = min(utc_datetime(target.element.epoch_utc), utc_datetime(other.element.epoch_utc))
+            data_age = (analysis_time - oldest_epoch).total_seconds() / 3600
+            risk = score_candidate(
+                miss_distance_km=d_min,
+                relative_velocity_km_s=rel_velocity,
+                tca=t_min,
+                analysis_time=analysis_time,
+                data_age_hours=data_age,
+                primary_object_type=target_type,
+                secondary_object_type=_object_type(other.object.object_type),
+            )
+            secondary_ref = {
+                "norad_id": str(norad_id),
+                "name": other.object.object_name,
+                "object_type": _object_type(other.object.object_type),
+            }
+            entry = {
+                "secondary": secondary_ref,
+                "tca": t_min,
+                "miss_distance_km": d_min,
+                "relative_velocity_km_s": rel_velocity,
+                "risk_score": risk.score,
+                "severity": risk.severity,
+                "confidence": risk.confidence,
+            }
+            post_maneuver_events.append(entry)
+            post_by_secondary[norad_id] = entry
+
+    baseline_after = {k: v for k, v in baseline_by_secondary.items() if utc_datetime(v["tca"]) >= maneuver_time}
+    comparison: list[dict] = []
+    for secondary_id in set(baseline_after.keys()) | set(post_by_secondary.keys()):
+        before = baseline_after.get(secondary_id)
+        after = post_by_secondary.get(secondary_id)
+        if before and after:
+            status = "unchanged"
+            if after["risk_score"] > before["risk_score"] + 5:
+                status = "worsened"
+            elif after["risk_score"] < before["risk_score"] - 5:
+                status = "improved"
+            comparison.append(
+                {
+                    "secondary": after["secondary"],
+                    "status": status,
+                    "before_miss_distance_km": before["miss_distance_km"],
+                    "after_miss_distance_km": after["miss_distance_km"],
+                    "before_risk_score": before["risk_score"],
+                    "after_risk_score": after["risk_score"],
+                }
+            )
+        elif before:
+            comparison.append(
+                {
+                    "secondary": before["secondary"],
+                    "status": "resolved",
+                    "before_miss_distance_km": before["miss_distance_km"],
+                    "after_miss_distance_km": None,
+                    "before_risk_score": before["risk_score"],
+                    "after_risk_score": None,
+                }
+            )
+        else:
+            comparison.append(
+                {
+                    "secondary": after["secondary"],
+                    "status": "new",
+                    "before_miss_distance_km": None,
+                    "after_miss_distance_km": after["miss_distance_km"],
+                    "before_risk_score": None,
+                    "after_risk_score": after["risk_score"],
+                }
+            )
+    rank = {"new": 0, "worsened": 1, "resolved": 2, "improved": 3, "unchanged": 4}
+    comparison.sort(key=lambda row: rank[row["status"]])
+
+    return {
+        "target": {"norad_id": target_id_str, "name": target.object.object_name, "object_type": target_type},
+        "maneuver_time": maneuver_time,
+        "delta_v_m_s": config.delta_v_m_s,
+        "analysis_time": analysis_time,
+        "forecast_horizon_hours": config.forecast_horizon_hours,
+        "baseline_events": baseline_events,
+        "post_maneuver_events": post_maneuver_events,
+        "comparison": comparison,
+        "limitations": [
+            "Post-maneuver trajectory uses two-body nominal propagation only — no J2, drag, or third-body perturbations.",
+            "No covariance-based collision probability is available; this is a nominal hypothetical exploration tool, not a maneuver-planning system.",
+        ],
+    }
+
+
+class ManeuverTargetNotFoundError(LookupError):
+    """The requested target is not part of the eligible screening set."""
+
+
 class ManeuverInfeasibleError(ValueError):
     """The requested burn cannot be evaluated (bad geometry, SGP4 failure, etc.)."""
+
+
+@dataclass(frozen=True)
+class ManeuverConfig:
+    norad_cat_id: int
+    delta_v_m_s: float
+    maneuver_lead_hours: float
+    analysis_time: datetime
+    forecast_horizon_hours: float = 24.0
+    screening_threshold_km: float = 50.0
+    sample_step_seconds: int = 120
+    object_limit: int = 150
 
 
 @dataclass(frozen=True)

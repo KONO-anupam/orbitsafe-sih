@@ -15,6 +15,10 @@ from app.database import get_db, init_db
 from app.models import OrbitalElementSet, OrbitalObject
 from app.schemas import (
     CandidateConjunctionResponse,
+    CascadeManeuverCandidateResponse,
+    CascadeManeuverComparisonRow,
+    CascadeManeuverRequest,
+    CascadeManeuverSimulationResponse,
     ElementResponse,
     ManeuverRequest,
     ManeuverResponse,
@@ -27,7 +31,7 @@ from app.schemas import (
     TrajectoryRequest,
     TrajectoryResponse,
 )
-from app.services.maneuver import evaluate_maneuver
+from app.services.maneuver import ManeuverConfig, ManeuverTargetNotFoundError, evaluate_maneuver, simulate_maneuver
 from app.services.propagation import (
     ElementEpochPolicyError,
     ObjectNotFoundError,
@@ -242,3 +246,44 @@ def whatif_maneuver(request: ManeuverRequest, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - safety net; keep surface explicit.
         raise HTTPException(status_code=500, detail=f"Maneuver evaluation failed: {exc}") from exc
+
+
+@app.post("/api/v1/maneuver/simulate", response_model=CascadeManeuverSimulationResponse, tags=["maneuver"])
+def maneuver_simulate(
+    request: CascadeManeuverRequest,
+    confirm: bool = Query(default=False, description="Must be true to pay the cost of the re-screen."),
+    db: Session = Depends(get_db),
+) -> CascadeManeuverSimulationResponse:
+    """Simulate a hypothetical along-track burn and then re-screen the target against the catalog."""
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Pass confirm=true — this endpoint re-screens the target against the catalog.")
+
+    analysis_time = request.analysis_time or datetime.now(timezone.utc)
+    try:
+        result = simulate_maneuver(
+            db,
+            ManeuverConfig(
+                norad_cat_id=request.norad_cat_id,
+                delta_v_m_s=request.delta_v_m_s,
+                maneuver_lead_hours=request.maneuver_lead_hours,
+                analysis_time=analysis_time,
+                forecast_horizon_hours=request.forecast_horizon_hours,
+                screening_threshold_km=request.screening_threshold_km,
+                sample_step_seconds=request.sample_step_seconds,
+                object_limit=request.object_limit,
+            ),
+        )
+    except ManeuverTargetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return CascadeManeuverSimulationResponse(
+        target=result["target"],
+        maneuver_time=result["maneuver_time"],
+        delta_v_m_s=result["delta_v_m_s"],
+        analysis_time=result["analysis_time"],
+        forecast_horizon_hours=result["forecast_horizon_hours"],
+        baseline_events=[CascadeManeuverCandidateResponse.model_validate(item) for item in result["baseline_events"]],
+        post_maneuver_events=[CascadeManeuverCandidateResponse.model_validate(item) for item in result["post_maneuver_events"]],
+        comparison=[CascadeManeuverComparisonRow.model_validate(item) for item in result["comparison"]],
+        limitations=result["limitations"],
+    )

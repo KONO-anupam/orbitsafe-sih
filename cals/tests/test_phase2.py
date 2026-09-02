@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 from app.models import OrbitalElementSet
 from app.services.ingestion import ingest_all
+from app.services.maneuver import ManeuverConfig, simulate_maneuver
 from app.services.propagation import (
     ElementEpochPolicyError,
     generate_trajectory,
@@ -164,3 +165,25 @@ def test_risk_score_is_explainable_and_penalizes_stale_data():
     assert stale_distant.confidence == "LOW"
     assert stale_distant.next_step in {"MONITOR", "REFRESH_DATA"}
     assert stale_distant.limitations
+
+
+def test_cascade_maneuver_simulation_builds_result(db):
+    analysis = utc_datetime("2026-08-26T12:00:00Z")
+    result = simulate_maneuver(
+        db,
+        ManeuverConfig(
+            norad_cat_id=900,
+            delta_v_m_s=200.0,
+            maneuver_lead_hours=6.0,
+            analysis_time=analysis,
+            forecast_horizon_hours=12.0,
+            screening_threshold_km=50.0,
+            sample_step_seconds=180,
+            object_limit=25,
+        ),
+    )
+    assert result["target"]["norad_id"] == "900"
+    assert "baseline_events" in result
+    assert "post_maneuver_events" in result
+    assert "comparison" in result
+    assert isinstance(result["limitations"], list)

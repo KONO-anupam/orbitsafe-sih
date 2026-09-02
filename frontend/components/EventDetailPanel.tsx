@@ -10,6 +10,7 @@ import ScopeTrace from "./ScopeTrace";
 import OrbitSchematic from "./OrbitSchematic";
 import Globe3D from "./Globe3D";
 import ManeuverPanel from "./ManeuverPanel";
+import ManeuverWhatIf from "./ManeuverWhatIf";
 
   function evolutionMeta(status: EventEvolution["status"]): { label: string; color: string } {
     switch (status) {
@@ -293,6 +294,7 @@ function RobustnessCard({ event }: { event: ConjunctionEvent }) {
         <RobustnessCard event={event} />
         {evolution && <EvolutionCard evolution={evolution} />}
         <ManeuverPanel event={event} />
+        <ManeuverWhatIf event={event} />
 
         {/* orbit geometry card: 3D globe with 2D fallback */}
         <div className="panel-card p-5">
